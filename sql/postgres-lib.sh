@@ -131,26 +131,65 @@ sanitize_listen_value() {
     printf '%s' "$value"
 }
 
+detect_container_ip() {
+    local ip=""
+
+    if [[ -n "${CONTAINER_IP:-}" ]]; then
+        sanitize_listen_value "$CONTAINER_IP"
+        return
+    fi
+    if [[ -n "${DB_HOST:-}" && "$DB_HOST" != "localhost" && "$DB_HOST" != "127.0.0.1" ]]; then
+        sanitize_listen_value "$DB_HOST"
+        return
+    fi
+
+    ip="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -Ev '^(127\.|::1)' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+    if [[ -n "$ip" ]]; then
+        sanitize_listen_value "$ip"
+        return
+    fi
+
+    if command -v ip >/dev/null 2>&1; then
+        ip="$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)"
+        if [[ -n "$ip" ]]; then
+            sanitize_listen_value "$ip"
+            return
+        fi
+        ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
+        if [[ -n "$ip" && "$ip" != "127.0.0.1" ]]; then
+            sanitize_listen_value "$ip"
+            return
+        fi
+    fi
+
+    return 1
+}
+
 detect_listen_addresses() {
     local ip=""
+
     if [[ -n "${LISTEN_ADDRESSES:-}" ]]; then
         sanitize_listen_value "$LISTEN_ADDRESSES"
         return
     fi
-    if is_container; then
-        ip="$(hostname -I 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i != "127.0.0.1") { print $i; exit }}')"
-        if [[ -z "$ip" ]] && command -v ip >/dev/null 2>&1; then
-            ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
-        fi
-        if [[ -n "$ip" ]]; then
-            pg_log "Container LXC: listen su 127.0.0.1 e ${ip}"
+
+    ip="$(detect_container_ip 2>/dev/null || true)"
+    if [[ -n "$ip" ]]; then
+        if is_container; then
+            pg_log "Listen su 127.0.0.1 e ${ip}"
             sanitize_listen_value "127.0.0.1,${ip}"
             return
         fi
-        pg_log "Container LXC: fallback su localhost"
+        sanitize_listen_value "$ip"
+        return
+    fi
+
+    if is_container; then
+        pg_log "ATTENZIONE: IP container non rilevato. Imposta CONTAINER_IP=171.20.1.84"
         printf '127.0.0.1'
         return
     fi
+
     printf '*'
 }
 

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Installa e configura PostgreSQL su Rocky Linux / container Proxmox LXC
 # Esegui: sudo ./fix-postgres-rocky.sh
-# Opzionale: sudo DB_PASSWORD='secret' ./fix-postgres-rocky.sh
+# Opzionale:
+#   sudo CONTAINER_IP=171.20.1.84 DB_PASSWORD='secret' ./fix-postgres-rocky.sh
 set -euo pipefail
 
 DB_NAME="${DB_NAME:-raspberry_counter}"
 DB_USER="${DB_USER:-contatore}"
 DB_PASSWORD="${DB_PASSWORD:-}"
+CONTAINER_IP="${CONTAINER_IP:-}"
 PG_SERVICE="postgresql"
 PG_DATA=""
 SCHEMA_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/schema.sql"
@@ -28,6 +30,29 @@ prompt_password() {
     read -r -s -p "Password per utente PostgreSQL '${DB_USER}': " DB_PASSWORD
     echo
     [[ -n "$DB_PASSWORD" ]] || die "Password obbligatoria"
+}
+
+require_container_ip() {
+    if ! is_container; then
+        return
+    fi
+    if [[ -n "$CONTAINER_IP" ]]; then
+        export CONTAINER_IP
+        return
+    fi
+
+    local detected=""
+    detected="$(detect_container_ip 2>/dev/null || true)"
+    if [[ -n "$detected" ]]; then
+        CONTAINER_IP="$detected"
+        export CONTAINER_IP
+        log "IP container rilevato: ${CONTAINER_IP}"
+        return
+    fi
+
+    read -r -p "IP del container (es. 171.20.1.84): " CONTAINER_IP
+    [[ -n "$CONTAINER_IP" ]] || die "CONTAINER_IP obbligatorio nel container LXC"
+    export CONTAINER_IP
 }
 
 install_packages() {
@@ -169,9 +194,10 @@ start_service() {
 }
 
 show_summary() {
-    local ip listen
-    ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    local ip listen dropin_file
+    ip="${CONTAINER_IP:-$(detect_container_ip 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')}"
     listen="$(detect_listen_addresses)"
+    dropin_file="${PG_DATA}/conf.d/industria5.conf"
     cat <<EOF
 
 Setup completato.
@@ -179,7 +205,9 @@ Setup completato.
 Database : ${DB_NAME}
 Utente   : ${DB_USER}
 Porta    : 5432
+IP       : ${ip:-non impostato}
 Listen   : ${listen}
+Config   : ${dropin_file}
 Servizio : ${PG_SERVICE}
 
 Configura i Raspberry (.env):
@@ -202,6 +230,7 @@ EOF
 main() {
     require_root
     prompt_password
+    require_container_ip
     install_packages
     detect_service
     init_cluster_if_missing
