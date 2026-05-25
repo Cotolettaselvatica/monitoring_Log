@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
+User=koman
 WorkingDirectory=/opt/piece-counter
 EnvironmentFile=/etc/piece-counter.env
 ExecStart=/opt/piece-counter/.venv/bin/python -m piece_counter.counter

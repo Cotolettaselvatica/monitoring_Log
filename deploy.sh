@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/opt/piece-counter"
 ENV_FILE="/etc/piece-counter.env"
 SERVICE_NAME="piece-counter.service"
-SERVICE_USER="${SUDO_USER:-pi}"
+SERVICE_USER="${SUDO_USER:-koman}"
 
 NOME_MACCHINARIO=""
 NOME_PEZZO=""
@@ -36,7 +36,7 @@ Opzioni:
   --db-password        Password PostgreSQL (obbligatorio)
   --gpio-pin           Pin GPIO BCM (default: 10)
   --debounce-ms        Antirimbalzo in ms (default: 200)
-  --service-user       Utente Linux del servizio (default: utente sudo o pi)
+  --service-user       Utente Linux del servizio (default: utente sudo o koman)
   -h, --help           Mostra questo messaggio
 
 Senza opzioni, lo script chiede i valori in modo interattivo.
