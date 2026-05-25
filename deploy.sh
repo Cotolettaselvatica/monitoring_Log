@@ -247,11 +247,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=${SERVICE_USER}
+SupplementaryGroups=gpio
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${ENV_FILE}
 ExecStart=${INSTALL_DIR}/.venv/bin/python -m piece_counter.counter
 Restart=always
 RestartSec=5
+TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target

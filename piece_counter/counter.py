@@ -47,6 +47,40 @@ def on_falling_edge(
         logger.exception("Impossibile registrare il pezzo su PostgreSQL")
 
 
+def setup_gpio(pin: int, debounce_ms: int, callback) -> None:
+    GPIO.setwarnings(False)
+    GPIO.cleanup()
+
+    try:
+        GPIO.remove_event_detect(pin)
+    except (RuntimeError, ValueError):
+        pass
+
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+    try:
+        GPIO.add_event_detect(
+            pin,
+            GPIO.FALLING,
+            callback=callback,
+            bouncetime=debounce_ms,
+        )
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"Impossibile registrare edge detection su GPIO {pin}. "
+            f"Verifica permessi (gruppo gpio) e che il pin non sia gia' in uso."
+        ) from exc
+
+
+def cleanup_gpio(pin: int) -> None:
+    try:
+        GPIO.remove_event_detect(pin)
+    except (RuntimeError, ValueError):
+        pass
+    GPIO.cleanup(pin)
+
+
 def main() -> int:
     setup_logging()
     signal.signal(signal.SIGINT, stop_handler)
@@ -66,33 +100,33 @@ def main() -> int:
         logger.exception("Connessione iniziale a PostgreSQL fallita")
         return 1
 
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(settings.gpio_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-    GPIO.add_event_detect(
-        settings.gpio_pin,
-        GPIO.FALLING,
-        callback=lambda channel: on_falling_edge(
-            channel,
-            repository,
-            settings.nome_macchinario,
-            settings.nome_pezzo,
-        ),
-        bouncetime=settings.debounce_ms,
+    gpio_pin = settings.gpio_pin
+    callback = lambda channel: on_falling_edge(
+        channel,
+        repository,
+        settings.nome_macchinario,
+        settings.nome_pezzo,
     )
+
+    try:
+        setup_gpio(gpio_pin, settings.debounce_ms, callback)
+    except RuntimeError:
+        logger.exception("Inizializzazione GPIO fallita")
+        repository.close()
+        return 1
 
     logger.info(
         "Contatore avviato: macchinario=%s pezzo=%s gpio=%s",
         settings.nome_macchinario,
         settings.nome_pezzo,
-        settings.gpio_pin,
+        gpio_pin,
     )
 
     try:
         while running:
             time.sleep(1)
     finally:
-        GPIO.cleanup(settings.gpio_pin)
+        cleanup_gpio(gpio_pin)
         repository.close()
         logger.info("Contatore terminato")
 

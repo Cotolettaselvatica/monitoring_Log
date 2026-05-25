@@ -6,11 +6,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=koman
+SupplementaryGroups=gpio
 WorkingDirectory=/opt/piece-counter
 EnvironmentFile=/etc/piece-counter.env
 ExecStart=/opt/piece-counter/.venv/bin/python -m piece_counter.counter
 Restart=always
 RestartSec=5
+TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target
