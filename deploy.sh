@@ -24,7 +24,7 @@ Deploy contatore pezzi su Raspberry Pi.
 Uso:
   sudo ./deploy.sh
   sudo ./deploy.sh --nome-macchinario Linea1_MacchinaA --nome-pezzo ComponenteXYZ \
-    --db-host 192.168.1.100 --db-name raspberry_counter --db-user contatore --db-password secret
+    --db-host 172.20.1.84 --db-name raspberry_counter --db-user counter --db-password CatisPg2026
 
 Opzioni:
   --nome-macchinario   Nome univoco della macchina (obbligatorio)
@@ -162,16 +162,16 @@ collect_inputs() {
         prompt_value NOME_PEZZO "Nome pezzo"
     fi
     if [[ -z "$DB_HOST" ]]; then
-        prompt_value DB_HOST "Indirizzo PostgreSQL (IP o hostname)"
+        prompt_value DB_HOST "Indirizzo PostgreSQL (IP o hostname)" "172.20.1.84"
     fi
     if [[ -z "$DB_PORT" ]]; then
         prompt_value DB_PORT "Porta PostgreSQL" "5432"
     fi
     if [[ -z "$DB_NAME" ]]; then
-        prompt_value DB_NAME "Nome database"
+        prompt_value DB_NAME "Nome database" "raspberry_counter"
     fi
     if [[ -z "$DB_USER" ]]; then
-        prompt_value DB_USER "Utente PostgreSQL"
+        prompt_value DB_USER "Utente PostgreSQL" "counter"
     fi
     if [[ -z "$DB_PASSWORD" ]]; then
         prompt_value DB_PASSWORD "Password PostgreSQL" "" true
