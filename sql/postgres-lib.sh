@@ -4,6 +4,7 @@
 PG_SERVICE="${PG_SERVICE:-postgresql}"
 PG_DATA="${PG_DATA:-}"
 PG_HBA_MARKER="${PG_HBA_MARKER:-# Industria 5.0 - tutte le subnet}"
+PG_DROPIN_NAME="${PG_DROPIN_NAME:-industria5.conf}"
 
 pg_log() {
     if declare -F log >/dev/null 2>&1; then
@@ -145,48 +146,68 @@ detect_listen_addresses() {
     printf '*'
 }
 
-set_listen_addresses() {
+cleanup_main_postgresql_conf() {
     local pg_conf="${PG_DATA}/postgresql.conf"
-    local listen_value tmp
-    listen_value="$(detect_listen_addresses)"
-    tmp="$(mktemp)"
+    local tmp
 
-    awk -v listen="$listen_value" '
-        BEGIN { done = 0 }
-        /^[[:space:]]*#/ && /listen_addresses/ {
-            print "listen_addresses = \047" listen "\047"
-            done = 1
-            next
-        }
-        /^[[:space:]]*listen_addresses/ {
-            if (!done) {
-                print "listen_addresses = \047" listen "\047"
-                done = 1
-            }
-            next
-        }
+    [[ -f "$pg_conf" ]] || return 0
+
+    pg_log "Ripulisco listen_addresses/logging_collector dal postgresql.conf principale..."
+    tmp="$(mktemp)"
+    awk '
+        /^[[:space:]]*listen_addresses[[:space:]]*=/ { next }
+        /^[[:space:]]*logging_collector[[:space:]]*=/ { next }
         { print }
-        END {
-            if (!done) {
-                print "listen_addresses = \047" listen "\047"
-            }
-        }
     ' "$pg_conf" >"$tmp"
     mv "$tmp" "$pg_conf"
     chown postgres:postgres "$pg_conf"
     chmod 600 "$pg_conf"
 }
 
-fix_logging_collector() {
+ensure_conf_d_included() {
     local pg_conf="${PG_DATA}/postgresql.conf"
-    mkdir -p "${PG_DATA}/log"
-    chown postgres:postgres "${PG_DATA}/log"
-    chmod 700 "${PG_DATA}/log"
 
-    if grep -q "^[[:space:]]*logging_collector[[:space:]]*=[[:space:]]*on" "$pg_conf"; then
-        pg_log "Disattivo logging_collector (evita errori directory log nel container)..."
-        sed -i "s/^[[:space:]]*logging_collector[[:space:]]*=[[:space:]]*on/logging_collector = off/" "$pg_conf"
+    [[ -f "$pg_conf" ]] || return 0
+    if grep -qE "^[[:space:]]*include_dir[[:space:]]*=[[:space:]]*'conf\.d'" "$pg_conf"; then
+        return 0
     fi
+
+    pg_log "Abilito include_dir conf.d in postgresql.conf..."
+    printf "\ninclude_dir = 'conf.d'\n" >>"$pg_conf"
+    chown postgres:postgres "$pg_conf"
+    chmod 600 "$pg_conf"
+}
+
+write_postgres_dropin_conf() {
+    local dropin_dir="${PG_DATA}/conf.d"
+    local dropin_file="${dropin_dir}/${PG_DROPIN_NAME}"
+    local listen_value
+
+    listen_value="$(detect_listen_addresses)"
+    mkdir -p "$dropin_dir"
+
+    pg_log "Scrivo ${dropin_file} (listen_addresses=${listen_value})..."
+    cat >"$dropin_file" <<EOF
+# Generato da Industria 5.0 - non modificare postgresql.conf manualmente
+listen_addresses = '${listen_value}'
+logging_collector = off
+EOF
+
+    chown postgres:postgres "$dropin_file"
+    chmod 600 "$dropin_file"
+}
+
+set_listen_addresses() {
+    cleanup_main_postgresql_conf
+    ensure_conf_d_included
+    write_postgres_dropin_conf
+}
+
+fix_logging_collector() {
+    mkdir -p "${PG_DATA}/log" "${PG_DATA}/conf.d"
+    chown postgres:postgres "${PG_DATA}/log" "${PG_DATA}/conf.d"
+    chmod 700 "${PG_DATA}/log"
+    # logging_collector gestito in conf.d/industria5.conf
 }
 
 write_pg_hba_file() {
@@ -233,8 +254,8 @@ validate_postgres_config() {
     pg_log "Prima verifica fallita:"
     cat "$err_file" >&2
 
-    if grep -qi 'log\|logging_collector' "$err_file"; then
-        fix_logging_collector
+    if grep -qi 'log\|logging_collector\|listen_addresses' "$err_file"; then
+        set_listen_addresses
     fi
     if grep -qi 'pg_hba.conf' "$err_file"; then
         write_pg_hba_file
