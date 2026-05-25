@@ -4,7 +4,7 @@
 PG_SERVICE="${PG_SERVICE:-postgresql}"
 PG_DATA="${PG_DATA:-}"
 PG_HBA_MARKER="${PG_HBA_MARKER:-# Industria 5.0 - tutte le subnet}"
-PG_DROPIN_NAME="${PG_DROPIN_NAME:-industria5.conf}"
+PG_CONF_MARKER="${PG_CONF_MARKER:-# --- Industria 5.0 ---}"
 
 pg_log() {
     if declare -F log >/dev/null 2>&1; then
@@ -195,14 +195,15 @@ detect_listen_addresses() {
 
 repair_corrupted_postgresql_conf() {
     local pg_conf="${PG_DATA}/postgresql.conf"
-    local dropin_file="${PG_DATA}/conf.d/${PG_DROPIN_NAME}"
     local tmp
 
     [[ -f "$pg_conf" ]] || return 0
 
-    pg_log "Riparo postgresql.conf da righe listen_addresses corrotte..."
+    pg_log "Ripulisco ${pg_conf}..."
     tmp="$(mktemp)"
     awk '
+        /# --- Industria 5.0 ---/ { next }
+        /# Generato da Industria 5.0/ { next }
         /listen_addresses/ { next }
         /^[[:space:]]*logging_collector[[:space:]]*=/ { next }
         /^[[:space:]]*'\''127\./ { next }
@@ -215,52 +216,30 @@ repair_corrupted_postgresql_conf() {
     chown postgres:postgres "$pg_conf"
     chmod 600 "$pg_conf"
 
-    if [[ -f "$dropin_file" ]]; then
-        rm -f "$dropin_file"
-    fi
+    rm -f "${PG_DATA}/conf.d/industria5.conf"
 }
 
-cleanup_main_postgresql_conf() {
-    repair_corrupted_postgresql_conf
-}
-
-ensure_conf_d_included() {
+write_postgresql_settings() {
     local pg_conf="${PG_DATA}/postgresql.conf"
-
-    [[ -f "$pg_conf" ]] || return 0
-    if grep -qE "^[[:space:]]*include_dir[[:space:]]*=[[:space:]]*'conf\.d'" "$pg_conf"; then
-        return 0
-    fi
-
-    pg_log "Abilito include_dir conf.d in postgresql.conf..."
-    printf "\ninclude_dir = 'conf.d'\n" >>"$pg_conf"
-    chown postgres:postgres "$pg_conf"
-    chmod 600 "$pg_conf"
-}
-
-write_postgres_dropin_conf() {
-    local dropin_dir="${PG_DATA}/conf.d"
-    local dropin_file="${dropin_dir}/${PG_DROPIN_NAME}"
     local listen_value postgres_bin
 
     listen_value="$(detect_listen_addresses)"
     listen_value="$(sanitize_listen_value "$listen_value")"
-    mkdir -p "$dropin_dir"
 
-    pg_log "Scrivo ${dropin_file} (listen_addresses=${listen_value})..."
+    pg_log "Scrivo impostazioni in ${pg_conf} (listen_addresses=${listen_value})..."
     {
-        printf '%s\n' "# Generato da Industria 5.0"
+        printf '\n%s\n' "$PG_CONF_MARKER"
         printf "listen_addresses = '%s'\n" "$listen_value"
         printf '%s\n' "logging_collector = off"
-    } >"$dropin_file"
+    } >>"$pg_conf"
 
-    chown postgres:postgres "$dropin_file"
-    chmod 600 "$dropin_file"
+    chown postgres:postgres "$pg_conf"
+    chmod 600 "$pg_conf"
 
     postgres_bin="$(command -v postgres 2>/dev/null || true)"
     if [[ -n "$postgres_bin" ]] && postgres_supports_check_config; then
         if ! run_as_postgres "$postgres_bin" -D "$PG_DATA" --check-config >/tmp/pg-check.log 2>&1; then
-            pg_log "Configurazione non valida dopo scrittura drop-in:"
+            pg_log "Configurazione non valida:"
             cat /tmp/pg-check.log >&2
             return 1
         fi
@@ -269,15 +248,13 @@ write_postgres_dropin_conf() {
 
 set_listen_addresses() {
     repair_corrupted_postgresql_conf
-    ensure_conf_d_included
-    write_postgres_dropin_conf || return 1
+    write_postgresql_settings || return 1
 }
 
 fix_logging_collector() {
-    mkdir -p "${PG_DATA}/log" "${PG_DATA}/conf.d"
-    chown postgres:postgres "${PG_DATA}/log" "${PG_DATA}/conf.d"
+    mkdir -p "${PG_DATA}/log"
+    chown postgres:postgres "${PG_DATA}/log"
     chmod 700 "${PG_DATA}/log"
-    # logging_collector gestito in conf.d/industria5.conf
 }
 
 write_pg_hba_file() {

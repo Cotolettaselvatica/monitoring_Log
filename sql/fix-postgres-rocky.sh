@@ -194,10 +194,10 @@ start_service() {
 }
 
 show_summary() {
-    local ip listen dropin_file
+    local ip listen pg_conf
     ip="${CONTAINER_IP:-$(detect_container_ip 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')}"
     listen="$(detect_listen_addresses)"
-    dropin_file="${PG_DATA}/conf.d/industria5.conf"
+    pg_conf="${PG_DATA}/postgresql.conf"
     cat <<EOF
 
 Setup completato.
@@ -207,7 +207,7 @@ Utente   : ${DB_USER}
 Porta    : 5432
 IP       : ${ip:-non impostato}
 Listen   : ${listen}
-Config   : ${dropin_file}
+Config   : ${pg_conf}
 Servizio : ${PG_SERVICE}
 
 Configura i Raspberry (.env):
