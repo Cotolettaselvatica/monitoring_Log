@@ -204,16 +204,25 @@ EOF
     chown "${SERVICE_USER}:${SERVICE_USER}" "$ENV_FILE"
 }
 
+install_system_packages() {
+    log "Installo pacchetti di sistema (GPIO via apt, non pip)..."
+    apt install -y python3-venv python3-pip python3-lgpio python3-rpi-lgpio 2>/dev/null \
+        || apt install -y python3-venv python3-pip python3-lgpio 2>/dev/null \
+        || true
+}
+
 install_application() {
     log "Installo applicazione in ${INSTALL_DIR}"
+
+    install_system_packages
 
     mkdir -p "$INSTALL_DIR"
     cp -r "${SCRIPT_DIR}/piece_counter" "$INSTALL_DIR/"
     cp "${SCRIPT_DIR}/requirements.txt" "$INSTALL_DIR/"
 
     if [[ ! -d "${INSTALL_DIR}/.venv" ]]; then
-        log "Creo virtualenv Python"
-        python3 -m venv "${INSTALL_DIR}/.venv"
+        log "Creo virtualenv Python (--system-site-packages per RPi.GPIO)"
+        python3 -m venv --system-site-packages "${INSTALL_DIR}/.venv"
     fi
 
     log "Installo dipendenze Python"
