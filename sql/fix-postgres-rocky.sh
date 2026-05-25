@@ -5,7 +5,6 @@ set -euo pipefail
 
 PG_SERVICE="postgresql"
 PG_DATA=""
-PG_HBA_MARKER="# Industria 5.0 - tutte le subnet"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=postgres-lib.sh
 source "${SCRIPT_DIR}/postgres-lib.sh"
@@ -72,86 +71,6 @@ fix_selinux() {
     fi
 }
 
-fix_logging() {
-    local pg_conf="${PG_DATA}/postgresql.conf"
-    if grep -q "^[[:space:]]*logging_collector[[:space:]]*=[[:space:]]*on" "$pg_conf"; then
-        log "Trovato logging_collector=on, verifico directory log..."
-        mkdir -p "${PG_DATA}/log"
-        chown postgres:postgres "${PG_DATA}/log"
-        chmod 700 "${PG_DATA}/log"
-    fi
-}
-
-set_listen_addresses() {
-    local pg_conf="${PG_DATA}/postgresql.conf"
-    local tmp
-    tmp="$(mktemp)"
-    awk '
-        BEGIN { done = 0 }
-        /^[[:space:]]*#/ && /listen_addresses/ { print "listen_addresses = '\''*'\''"; done = 1; next }
-        /^[[:space:]]*listen_addresses/ { if (!done) { print "listen_addresses = '\''*'\''"; done = 1 }; next }
-        { print }
-        END { if (!done) print "listen_addresses = '\''*'\''" }
-    ' "$pg_conf" >"$tmp"
-    mv "$tmp" "$pg_conf"
-    chown postgres:postgres "$pg_conf"
-    chmod 600 "$pg_conf"
-}
-
-fix_pg_hba() {
-    local hba_conf="${PG_DATA}/pg_hba.conf"
-    local tmp
-    tmp="$(mktemp)"
-
-    log "Ripulisco e riscrivo regole rete in pg_hba.conf..."
-    grep -vF "${PG_HBA_MARKER}" "$hba_conf" | grep -vE '^host[[:space:]]+all[[:space:]]+all[[:space:]]+(0\.0\.0\.0/0|::/0)' >"$tmp" || true
-
-    if [[ ! -s "$tmp" ]]; then
-        cat >"$tmp" <<'EOF'
-local   all             all                                     peer
-host    all             all             127.0.0.1/32            scram-sha-256
-host    all             all             ::1/128                 scram-sha-256
-EOF
-    fi
-
-    cat >>"$tmp" <<EOF
-
-${PG_HBA_MARKER}
-host    all             all             0.0.0.0/0               scram-sha-256
-host    all             all             ::/0                      scram-sha-256
-EOF
-
-    mv "$tmp" "$hba_conf"
-    chown postgres:postgres "$hba_conf"
-    chmod 600 "$hba_conf"
-}
-
-validate_config() {
-    local postgres_bin
-    postgres_bin="$(command -v postgres || die "postgres non trovato")"
-    log "Verifico configurazione..."
-    if ! sudo -u postgres "$postgres_bin" -D "$PG_DATA" --check-config; then
-        die "Configurazione non valida"
-    fi
-}
-
-try_pg_ctl() {
-    local pg_ctl
-    pg_ctl="$(command -v pg_ctl || true)"
-    [[ -n "$pg_ctl" ]] || return 0
-
-    log "Test avvio diretto con pg_ctl..."
-    if ! sudo -u postgres "$pg_ctl" status -D "$PG_DATA" >/dev/null 2>&1; then
-        if ! sudo -u postgres "$pg_ctl" start -D "$PG_DATA" -w -t 20 -l "${PG_DATA}/log/manual-start.log"; then
-            log "pg_ctl fallito. Ultimo log:"
-            tail -30 "${PG_DATA}/log/manual-start.log" 2>/dev/null || true
-            return 1
-        fi
-        sudo -u postgres "$pg_ctl" stop -D "$PG_DATA" -w -t 20 || true
-    fi
-    return 0
-}
-
 start_service() {
     if ! start_postgres; then
         printf '\n[fix-postgres] Diagnostica:\n' >&2
@@ -171,11 +90,10 @@ main() {
     init_cluster_if_missing
     fix_permissions
     fix_selinux
-    fix_logging
+    fix_logging_collector
     set_listen_addresses
-    fix_pg_hba
-    validate_config
-    try_pg_ctl || true
+    write_pg_hba_file
+    validate_postgres_config
     start_service
     log "Verifica: sudo ./start-postgres.sh status"
 }

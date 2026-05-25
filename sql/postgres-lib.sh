@@ -1,6 +1,24 @@
 #!/usr/bin/env bash
 # Funzioni condivise per PostgreSQL su Rocky / container Proxmox LXC
 
+PG_HBA_MARKER="${PG_HBA_MARKER:-# Industria 5.0 - tutte le subnet}"
+
+pg_log() {
+    if declare -F log >/dev/null 2>&1; then
+        log "$@"
+    else
+        printf '[postgres] %s\n' "$@"
+    fi
+}
+
+run_as_postgres() {
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u postgres -- "$@"
+    else
+        sudo -u postgres "$@"
+    fi
+}
+
 is_container() {
     if [[ -f /run/systemd/container ]]; then
         return 0
@@ -36,7 +54,98 @@ postgres_pg_ctl() {
 postgres_is_running() {
     local pg_ctl
     pg_ctl="$(postgres_pg_ctl)"
-    [[ -n "$pg_ctl" ]] && sudo -u postgres "$pg_ctl" status -D "$PG_DATA" >/dev/null 2>&1
+    [[ -n "$pg_ctl" ]] && run_as_postgres "$pg_ctl" status -D "$PG_DATA" >/dev/null 2>&1
+}
+
+set_listen_addresses() {
+    local pg_conf="${PG_DATA}/postgresql.conf"
+    local tmp
+    tmp="$(mktemp)"
+
+    awk '
+        BEGIN { done = 0 }
+        /^[[:space:]]*#/ && /listen_addresses/ { print "listen_addresses = '\''*'\''"; done = 1; next }
+        /^[[:space:]]*listen_addresses/ { if (!done) { print "listen_addresses = '\''*'\''"; done = 1 }; next }
+        { print }
+        END { if (!done) print "listen_addresses = '\''*'\''" }
+    ' "$pg_conf" >"$tmp"
+    mv "$tmp" "$pg_conf"
+    chown postgres:postgres "$pg_conf"
+    chmod 600 "$pg_conf"
+}
+
+fix_logging_collector() {
+    local pg_conf="${PG_DATA}/postgresql.conf"
+    mkdir -p "${PG_DATA}/log"
+    chown postgres:postgres "${PG_DATA}/log"
+    chmod 700 "${PG_DATA}/log"
+
+    if grep -q "^[[:space:]]*logging_collector[[:space:]]*=[[:space:]]*on" "$pg_conf"; then
+        pg_log "Disattivo logging_collector (evita errori directory log nel container)..."
+        sed -i "s/^[[:space:]]*logging_collector[[:space:]]*=[[:space:]]*on/logging_collector = off/" "$pg_conf"
+    fi
+}
+
+write_pg_hba_file() {
+    local hba_conf="${PG_DATA}/pg_hba.conf"
+    local auth_method="scram-sha-256"
+
+    pg_log "Scrivo pg_hba.conf pulito (tutte le subnet IPv4)..."
+    cat >"$hba_conf" <<EOF
+# PostgreSQL Client Authentication Configuration File
+local   all             all                                     peer
+host    all             all             127.0.0.1/32            ${auth_method}
+host    all             all             ::1/128                 ${auth_method}
+${PG_HBA_MARKER}
+host    all             all             0.0.0.0/0               ${auth_method}
+EOF
+
+    chown postgres:postgres "$hba_conf"
+    chmod 600 "$hba_conf"
+}
+
+postgres_supports_check_config() {
+    local postgres_bin
+    postgres_bin="$(command -v postgres 2>/dev/null || true)"
+    [[ -n "$postgres_bin" ]] && run_as_postgres "$postgres_bin" --help 2>&1 | grep -q -- '--check-config'
+}
+
+validate_postgres_config() {
+    local postgres_bin err_file
+    postgres_bin="$(command -v postgres 2>/dev/null || true)"
+    [[ -n "$postgres_bin" ]] || return 0
+
+    if ! postgres_supports_check_config; then
+        pg_log "Opzione --check-config non supportata, salto verifica"
+        return 0
+    fi
+
+    err_file="$(mktemp)"
+    pg_log "Verifico configurazione PostgreSQL..."
+    if run_as_postgres "$postgres_bin" -D "$PG_DATA" --check-config >"$err_file" 2>&1; then
+        rm -f "$err_file"
+        return 0
+    fi
+
+    pg_log "Prima verifica fallita:"
+    cat "$err_file" >&2
+
+    if grep -qi 'log\|logging_collector' "$err_file"; then
+        fix_logging_collector
+    fi
+    if grep -qi 'pg_hba.conf' "$err_file"; then
+        write_pg_hba_file
+    fi
+
+    pg_log "Seconda verifica configurazione..."
+    if run_as_postgres "$postgres_bin" -D "$PG_DATA" --check-config; then
+        rm -f "$err_file"
+        return 0
+    fi
+
+    rm -f "$err_file"
+    pg_log "Verifica config fallita: provo avvio PostgreSQL comunque..."
+    return 0
 }
 
 start_postgres_pg_ctl() {
@@ -49,13 +158,13 @@ start_postgres_pg_ctl() {
     chown postgres:postgres "${PG_DATA}/log"
 
     if postgres_is_running; then
-        log "PostgreSQL gia' in esecuzione (pg_ctl)"
+        pg_log "PostgreSQL gia' in esecuzione (pg_ctl)"
         return 0
     fi
 
-    log "Avvio PostgreSQL con pg_ctl (modalita' container)..."
-    if ! sudo -u postgres "$pg_ctl" start -D "$PG_DATA" -w -t 30 -l "$log_file"; then
-        log "pg_ctl fallito. Log:"
+    pg_log "Avvio PostgreSQL con pg_ctl (modalita' container)..."
+    if ! run_as_postgres "$pg_ctl" start -D "$PG_DATA" -w -t 30 -l "$log_file"; then
+        pg_log "pg_ctl fallito. Log:"
         tail -40 "$log_file" 2>/dev/null || true
         return 1
     fi
@@ -63,7 +172,7 @@ start_postgres_pg_ctl() {
 }
 
 start_postgres_systemd() {
-    log "Avvio PostgreSQL con systemd (${PG_SERVICE})..."
+    pg_log "Avvio PostgreSQL con systemd (${PG_SERVICE})..."
     systemctl enable "${PG_SERVICE}" 2>/dev/null || true
     systemctl reset-failed "${PG_SERVICE}" 2>/dev/null || true
     systemctl restart "${PG_SERVICE}"
@@ -73,21 +182,21 @@ start_postgres_systemd() {
 
 start_postgres() {
     if is_container; then
-        log "Ambiente container Proxmox/LXC rilevato"
+        pg_log "Ambiente container Proxmox/LXC rilevato"
     fi
 
     if systemd_usable; then
         if start_postgres_systemd; then
-            log "PostgreSQL attivo (systemd)"
+            pg_log "PostgreSQL attivo (systemd)"
             return 0
         fi
-        log "systemd fallito, provo pg_ctl..."
+        pg_log "systemd fallito, provo pg_ctl..."
     else
-        log "systemd non disponibile nel container, uso pg_ctl"
+        pg_log "systemd non disponibile nel container, uso pg_ctl"
     fi
 
     start_postgres_pg_ctl || return 1
-    log "PostgreSQL attivo (pg_ctl)"
+    pg_log "PostgreSQL attivo (pg_ctl)"
     return 0
 }
 
@@ -100,7 +209,7 @@ install_container_autostart() {
         return 0
     fi
 
-    log "Configuro avvio automatico container (rc.local)..."
+    pg_log "Configuro avvio automatico container (rc.local)..."
     chmod +x "$script_path"
     touch "$rc_local"
     chmod +x "$rc_local"

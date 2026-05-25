@@ -92,57 +92,12 @@ install_packages() {
     detect_service
 }
 
-set_listen_addresses() {
-    local pg_conf="${PG_DATA}/postgresql.conf"
-    local tmp
-    tmp="$(mktemp)"
-
-    awk '
-        BEGIN { done = 0 }
-        /^[[:space:]]*#/ && /listen_addresses/ { print "listen_addresses = '\''*'\''"; done = 1; next }
-        /^[[:space:]]*listen_addresses/ { if (!done) { print "listen_addresses = '\''*'\''"; done = 1 }; next }
-        { print }
-        END { if (!done) print "listen_addresses = '\''*'\''" }
-    ' "$pg_conf" >"$tmp"
-    mv "$tmp" "$pg_conf"
-}
-
 configure_network() {
-    local hba_conf="${PG_DATA}/pg_hba.conf"
-
     log "Configuro ascolto rete e accesso da tutte le subnet..."
     ensure_log_directory
+    fix_logging_collector
     set_listen_addresses
-    fix_pg_hba_rules
-}
-
-ensure_log_directory() {
-    mkdir -p "${PG_DATA}/log"
-    chown postgres:postgres "${PG_DATA}/log"
-    chmod 700 "${PG_DATA}/log"
-}
-
-fix_pg_hba_rules() {
-    local hba_conf="${PG_DATA}/pg_hba.conf"
-    local tmp
-    tmp="$(mktemp)"
-
-    if grep -qF "${PG_HBA_MARKER}" "$hba_conf"; then
-        chown postgres:postgres "${PG_DATA}/postgresql.conf" "$hba_conf"
-        chmod 600 "${PG_DATA}/postgresql.conf" "$hba_conf"
-        return
-    fi
-
-    grep -vE '^host[[:space:]]+all[[:space:]]+all[[:space:]]+(0\.0\.0\.0/0|::/0)[[:space:]]' "$hba_conf" >"$tmp"
-    cat >>"$tmp" <<EOF
-
-${PG_HBA_MARKER}
-host    all             all             0.0.0.0/0               scram-sha-256
-host    all             all             ::/0                      scram-sha-256
-EOF
-    mv "$tmp" "$hba_conf"
-    chown postgres:postgres "${PG_DATA}/postgresql.conf" "$hba_conf"
-    chmod 600 "${PG_DATA}/postgresql.conf" "$hba_conf"
+    write_pg_hba_file
 }
 
 configure_selinux() {
@@ -168,16 +123,14 @@ fix_filesystem() {
     chmod 700 "${PG_DATA}/log"
 }
 
-validate_config() {
-    local postgres_bin
-    postgres_bin="$(command -v postgres || true)"
-    [[ -n "$postgres_bin" ]] || return 0
+ensure_log_directory() {
+    mkdir -p "${PG_DATA}/log"
+    chown postgres:postgres "${PG_DATA}/log"
+    chmod 700 "${PG_DATA}/log"
+}
 
-    log "Verifico configurazione PostgreSQL..."
-    if ! sudo -u postgres "$postgres_bin" -D "$PG_DATA" --check-config >/tmp/pg-check-config.log 2>&1; then
-        cat /tmp/pg-check-config.log >&2
-        die "Configurazione PostgreSQL non valida (vedi sopra)"
-    fi
+validate_config() {
+    validate_postgres_config
 }
 
 show_startup_failure() {
