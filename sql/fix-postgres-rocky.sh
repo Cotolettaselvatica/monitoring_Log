@@ -115,26 +115,46 @@ configure_firewall() {
 
 setup_database() {
     log "Creo database, utente e schema..."
-    run_as_postgres psql -v ON_ERROR_STOP=1 <<EOF
-SELECT 'CREATE DATABASE ${DB_NAME}' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DB_NAME}')\gexec
+
+    if ! run_as_postgres psql -v ON_ERROR_STOP=1 -tAc \
+        "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'" | grep -q 1; then
+        run_as_postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME};"
+    fi
+
+    # Dollar-quoting ($pwd$...$pwd$) + espansione ${DB_PASSWORD}: sicuro con $ e ! nella password
+    run_as_postgres psql -v ON_ERROR_STOP=1 <<EOSQL
 DO \$\$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${DB_USER}') THEN
-        CREATE ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';
+        CREATE ROLE ${DB_USER} WITH LOGIN PASSWORD \$pwd\$${DB_PASSWORD}\$pwd\$;
     ELSE
-        ALTER ROLE ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';
+        ALTER ROLE ${DB_USER} WITH PASSWORD \$pwd\$${DB_PASSWORD}\$pwd\$;
     END IF;
 END
 \$\$;
 GRANT CONNECT ON DATABASE ${DB_NAME} TO ${DB_USER};
-EOF
+EOSQL
 
     run_as_postgres psql -v ON_ERROR_STOP=1 -d "$DB_NAME" -f "$SCHEMA_FILE"
 
-    run_as_postgres psql -v ON_ERROR_STOP=1 -d "$DB_NAME" <<EOF
+    run_as_postgres psql -v ON_ERROR_STOP=1 -d "$DB_NAME" <<EOSQL
 GRANT INSERT, SELECT ON conteggi_pezzi TO ${DB_USER};
 GRANT USAGE, SELECT ON SEQUENCE conteggi_pezzi_id_seq TO ${DB_USER};
-EOF
+EOSQL
+}
+
+verify_database_setup() {
+    log "Verifico utente, database e tabella..."
+    run_as_postgres psql -v ON_ERROR_STOP=1 -tAc \
+        "SELECT 1 FROM pg_roles WHERE rolname = '${DB_USER}'" | grep -q 1 \
+        || die "Utente ${DB_USER} non creato"
+    run_as_postgres psql -v ON_ERROR_STOP=1 -tAc \
+        "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'" | grep -q 1 \
+        || die "Database ${DB_NAME} non creato"
+    run_as_postgres psql -v ON_ERROR_STOP=1 -d "$DB_NAME" -tAc \
+        "SELECT 1 FROM information_schema.tables WHERE table_name = 'conteggi_pezzi'" | grep -q 1 \
+        || die "Tabella conteggi_pezzi non creata"
+    log "Verifica OK: utente, database e tabella presenti"
 }
 
 start_service() {
@@ -194,6 +214,7 @@ main() {
     start_service
     configure_firewall
     setup_database
+    verify_database_setup
     show_summary
 }
 
