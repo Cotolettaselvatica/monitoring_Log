@@ -91,13 +91,13 @@ set_listen_addresses() {
     awk -v listen="$listen_value" '
         BEGIN { done = 0 }
         /^[[:space:]]*#/ && /listen_addresses/ {
-            print "listen_addresses = " quote listen quote
+            print "listen_addresses = \047" listen "\047"
             done = 1
             next
         }
         /^[[:space:]]*listen_addresses/ {
             if (!done) {
-                print "listen_addresses = " quote listen quote
+                print "listen_addresses = \047" listen "\047"
                 done = 1
             }
             next
@@ -105,11 +105,8 @@ set_listen_addresses() {
         { print }
         END {
             if (!done) {
-                print "listen_addresses = " quote listen quote
+                print "listen_addresses = \047" listen "\047"
             }
-        }
-        function quote(s) {
-            return "\047" s "\047"
         }
     ' "$pg_conf" >"$tmp"
     mv "$tmp" "$pg_conf"
