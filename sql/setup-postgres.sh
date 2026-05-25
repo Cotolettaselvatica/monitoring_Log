@@ -6,7 +6,7 @@ set -euo pipefail
 DB_HOST_IP="172.20.1.84"
 DB_NAME="raspberry_counter"
 DB_USER="counter"
-DB_PASSWORD='C4t1$dbPost_2026!'
+DB_PASSWORD='Catis_Pg_2026!'
 PG_DATA="/var/lib/pgsql/data"
 SCHEMA_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/schema.sql"
 
