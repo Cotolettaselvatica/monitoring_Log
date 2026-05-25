@@ -62,10 +62,12 @@ configure_network() {
         sed -i '/# Industria 5.0/,/^logging_collector = off$/d' "$pg_conf"
     fi
     sed -i '/listen_addresses/d' "$pg_conf"
+    sed -i '/password_encryption/d' "$pg_conf"
 
     {
         printf '\n# Industria 5.0\n'
         printf "listen_addresses = '%s'\n" "$listen"
+        printf '%s\n' "password_encryption = scram-sha-256"
         printf '%s\n' "logging_collector = off"
     } >>"$pg_conf"
 
@@ -170,9 +172,15 @@ set_user_password() {
     chown postgres:postgres "$sql_file"
 
     if run_as_postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = '${DB_USER}'" | grep -qx 1; then
-        printf "ALTER ROLE %s WITH LOGIN PASSWORD '%s';\n" "$DB_USER" "$quoted_pwd" >"$sql_file"
+        {
+            printf '%s\n' "SET password_encryption = 'scram-sha-256';"
+            printf "ALTER ROLE %s WITH LOGIN PASSWORD '%s';\n" "$DB_USER" "$quoted_pwd"
+        } >"$sql_file"
     else
-        printf "CREATE ROLE %s WITH LOGIN PASSWORD '%s';\n" "$DB_USER" "$quoted_pwd" >"$sql_file"
+        {
+            printf '%s\n' "SET password_encryption = 'scram-sha-256';"
+            printf "CREATE ROLE %s WITH LOGIN PASSWORD '%s';\n" "$DB_USER" "$quoted_pwd"
+        } >"$sql_file"
     fi
 
     run_as_postgres psql -v ON_ERROR_STOP=1 -f "$sql_file"
@@ -209,6 +217,14 @@ verify_login() {
 
     if ! run_as_postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = '${DB_USER}' AND rolpassword IS NOT NULL" | grep -qx 1; then
         die "Utente ${DB_USER} senza password impostata"
+    fi
+
+    local hash_type
+    hash_type="$(run_as_postgres psql -tAc "SELECT CASE WHEN rolpassword LIKE 'SCRAM-SHA-256%' THEN 'scram' WHEN rolpassword LIKE 'md5%' THEN 'md5' ELSE 'other' END FROM pg_authid WHERE rolname = '${DB_USER}'")"
+    log "Tipo hash password: ${hash_type:-sconosciuto}"
+    if [[ "$hash_type" == "md5" ]]; then
+        log "Hash md5 rilevato con pg_hba scram: reimposto password..."
+        set_user_password
     fi
 
     err="$(PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -p 5432 -U "$DB_USER" -d "$DB_NAME" -c 'SELECT 1;' 2>&1)" \
