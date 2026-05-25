@@ -3,10 +3,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PG_SERVICE="postgresql"
+PG_DATA=""
 # shellcheck source=postgres-lib.sh
 source "${SCRIPT_DIR}/postgres-lib.sh"
-
-PG_DATA=""
 
 log() { printf '[postgres] %s\n' "$*"; }
 die() { printf '[postgres] ERRORE: %s\n' "$*" >&2; exit 1; }

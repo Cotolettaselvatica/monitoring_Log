@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Funzioni condivise per PostgreSQL su Rocky / container Proxmox LXC
 
+PG_SERVICE="${PG_SERVICE:-postgresql}"
+PG_DATA="${PG_DATA:-}"
 PG_HBA_MARKER="${PG_HBA_MARKER:-# Industria 5.0 - tutte le subnet}"
 
 pg_log() {
