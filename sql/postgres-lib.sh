@@ -59,17 +59,58 @@ postgres_is_running() {
     [[ -n "$pg_ctl" ]] && run_as_postgres "$pg_ctl" status -D "$PG_DATA" >/dev/null 2>&1
 }
 
+detect_listen_addresses() {
+    if [[ -n "${LISTEN_ADDRESSES:-}" ]]; then
+        printf '%s' "$LISTEN_ADDRESSES"
+        return
+    fi
+    if is_container; then
+        local ip=""
+        ip="$(hostname -I 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i != "127.0.0.1") { print $i; exit }}')"
+        if [[ -z "$ip" ]] && command -v ip >/dev/null 2>&1; then
+            ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
+        fi
+        if [[ -n "$ip" ]]; then
+            pg_log "Container LXC: uso IP ${ip} (bind su 0.0.0.0 non permesso)"
+            printf '127.0.0.1,%s' "$ip"
+            return
+        fi
+        pg_log "Container LXC: fallback su localhost"
+        printf '127.0.0.1'
+        return
+    fi
+    printf '*'
+}
+
 set_listen_addresses() {
     local pg_conf="${PG_DATA}/postgresql.conf"
-    local tmp
+    local listen_value tmp
+    listen_value="$(detect_listen_addresses)"
     tmp="$(mktemp)"
 
-    awk '
+    awk -v listen="$listen_value" '
         BEGIN { done = 0 }
-        /^[[:space:]]*#/ && /listen_addresses/ { print "listen_addresses = '\''*'\''"; done = 1; next }
-        /^[[:space:]]*listen_addresses/ { if (!done) { print "listen_addresses = '\''*'\''"; done = 1 }; next }
+        /^[[:space:]]*#/ && /listen_addresses/ {
+            print "listen_addresses = " quote listen quote
+            done = 1
+            next
+        }
+        /^[[:space:]]*listen_addresses/ {
+            if (!done) {
+                print "listen_addresses = " quote listen quote
+                done = 1
+            }
+            next
+        }
         { print }
-        END { if (!done) print "listen_addresses = '\''*'\''" }
+        END {
+            if (!done) {
+                print "listen_addresses = " quote listen quote
+            }
+        }
+        function quote(s) {
+            return "\047" s "\047"
+        }
     ' "$pg_conf" >"$tmp"
     mv "$tmp" "$pg_conf"
     chown postgres:postgres "$pg_conf"
@@ -166,6 +207,13 @@ start_postgres_pg_ctl() {
 
     pg_log "Avvio PostgreSQL con pg_ctl (modalita' container)..."
     if ! run_as_postgres "$pg_ctl" start -D "$PG_DATA" -w -t 30 -l "$log_file"; then
+        if grep -qi 'could not bind' "$log_file" 2>/dev/null; then
+            pg_log "Bind IPv4 fallito: riconfiguro listen_addresses con IP container..."
+            set_listen_addresses
+            if run_as_postgres "$pg_ctl" start -D "$PG_DATA" -w -t 30 -l "$log_file"; then
+                return 0
+            fi
+        fi
         pg_log "pg_ctl fallito. Log:"
         tail -40 "$log_file" 2>/dev/null || true
         return 1

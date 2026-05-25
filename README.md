@@ -137,6 +137,12 @@ Lo script configura anche l'avvio automatico via `/etc/rc.d/rc.local` se systemd
 
 **Nota Proxmox:** assicurati che la porta 5432 del container sia raggiungibile dalla LAN (firewall Proxmox/host e IP del CT corretto per i Raspberry).
 
+**Errore `could not bind to IPv4 0.0.0.0`:** nei container LXC non si puo' usare `listen_addresses = '*'`. Gli script impostano automaticamente l'IP del container (es. `127.0.0.1,171.20.1.84`). Per forzare manualmente:
+
+```bash
+sudo LISTEN_ADDRESSES='127.0.0.1,171.20.1.84' ./fix-postgres-rocky.sh
+```
+
 ### Setup automatico su Rocky Linux (consigliato)
 
 Sul server Rocky, copia la cartella del progetto e lancia:
