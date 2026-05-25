@@ -145,25 +145,26 @@ sudo LISTEN_ADDRESSES='127.0.0.1,171.20.1.84' ./fix-postgres-rocky.sh
 
 ### Setup automatico su Rocky Linux (consigliato)
 
-Sul server Rocky, copia la cartella del progetto e lancia:
+Sul server Rocky o container Proxmox, usa **`fix-postgres-rocky.sh`** — installa, configura e avvia tutto:
 
 ```bash
-cd UNIX_log_aggregator/sql
-chmod +x setup-rocky.sh
-sudo ./setup-rocky.sh
+cd sql
+chmod +x fix-postgres-rocky.sh start-postgres.sh
+sudo ./fix-postgres-rocky.sh
 ```
 
-Lo script:
-1. Installa `postgresql-server` via `dnf`
+Lo script (`setup-rocky.sh` e' lo stesso script):
+1. Installa `postgresql-server` via `dnf` (se mancante)
 2. Inizializza il cluster e avvia il servizio
 3. Configura ascolto di rete e `pg_hba.conf` (accesso da tutte le subnet)
 4. Apre la porta 5432 su `firewalld` (se attivo)
 5. Crea database `raspberry_counter`, utente `contatore` e tabella `conteggi_pezzi`
+6. Configura avvio automatico nel container LXC (se necessario)
 
 Parametri opzionali (senza prompt):
 
 ```bash
-sudo DB_PASSWORD='password_sicura' ./setup-rocky.sh
+sudo DB_PASSWORD='password_sicura' ./fix-postgres-rocky.sh
 ```
 
 | Variabile | Default | Descrizione |

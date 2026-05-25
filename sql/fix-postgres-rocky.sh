@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# Ripara avvio PostgreSQL su Rocky Linux (exit-code)
+# Installa e configura PostgreSQL su Rocky Linux / container Proxmox LXC
 # Esegui: sudo ./fix-postgres-rocky.sh
+# Opzionale: sudo DB_PASSWORD='secret' ./fix-postgres-rocky.sh
 set -euo pipefail
 
+DB_NAME="${DB_NAME:-raspberry_counter}"
+DB_USER="${DB_USER:-contatore}"
+DB_PASSWORD="${DB_PASSWORD:-}"
 PG_SERVICE="postgresql"
 PG_DATA=""
+SCHEMA_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/schema.sql"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=postgres-lib.sh
 source "${SCRIPT_DIR}/postgres-lib.sh"
@@ -16,18 +21,37 @@ require_root() {
     [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Esegui con sudo"
 }
 
+prompt_password() {
+    if [[ -n "$DB_PASSWORD" ]]; then
+        return
+    fi
+    read -r -s -p "Password per utente PostgreSQL '${DB_USER}': " DB_PASSWORD
+    echo
+    [[ -n "$DB_PASSWORD" ]] || die "Password obbligatoria"
+}
+
+install_packages() {
+    if command -v postgres >/dev/null 2>&1 && command -v postgresql-setup >/dev/null 2>&1; then
+        log "PostgreSQL gia' installato"
+        return
+    fi
+    log "Installo PostgreSQL (postgresql-server)..."
+    dnf install -y postgresql-server postgresql-contrib
+}
+
 detect_service() {
     if systemctl list-unit-files "${PG_SERVICE}.service" --no-legend 2>/dev/null | grep -q .; then
         return
     fi
     local candidate
     candidate="$(systemctl list-unit-files 'postgresql*.service' --no-legend 2>/dev/null | awk '{print $1}' | head -1)"
-    [[ -n "$candidate" ]] || die "Servizio PostgreSQL non trovato"
+    [[ -n "$candidate" ]] || die "Servizio PostgreSQL non trovato dopo l'installazione"
     PG_SERVICE="${candidate%.service}"
     log "Servizio: ${PG_SERVICE}"
 }
 
 detect_data_dir() {
+    PG_DATA=""
     if [[ -f /var/lib/pgsql/data/postgresql.conf ]]; then
         PG_DATA="/var/lib/pgsql/data"
     else
@@ -35,21 +59,29 @@ detect_data_dir() {
         conf="$(find /var/lib/pgsql -maxdepth 3 -name postgresql.conf 2>/dev/null | head -1 || true)"
         PG_DATA="${conf%/postgresql.conf}"
     fi
-    [[ -n "$PG_DATA" && -f "${PG_DATA}/postgresql.conf" ]] || die "postgresql.conf non trovato"
-    log "Data directory: ${PG_DATA}"
 }
 
 init_cluster_if_missing() {
-    if [[ -f "${PG_DATA}/PG_VERSION" ]]; then
+    detect_data_dir
+
+    if [[ -n "$PG_DATA" && -d "$PG_DATA" && ! -f "${PG_DATA}/PG_VERSION" ]]; then
+        log "Directory dati incompleta, la ricreo..."
+        rm -rf "$PG_DATA"
+        PG_DATA=""
+    fi
+
+    if [[ -n "$PG_DATA" && -f "${PG_DATA}/PG_VERSION" ]]; then
+        log "Cluster PostgreSQL gia' inizializzato"
+        log "Data directory: ${PG_DATA}"
         return
     fi
+
     log "Cluster assente, eseguo initdb..."
-    if [[ -d "$PG_DATA" ]]; then
-        rm -rf "$PG_DATA"
-    fi
     postgresql-setup --initdb --unit "${PG_SERVICE}" 2>/dev/null \
         || postgresql-setup --initdb
     detect_data_dir
+    [[ -n "$PG_DATA" && -f "${PG_DATA}/postgresql.conf" ]] || die "Directory dati PostgreSQL non trovata"
+    log "Data directory: ${PG_DATA}"
 }
 
 fix_permissions() {
@@ -71,22 +103,87 @@ fix_selinux() {
     fi
 }
 
+configure_firewall() {
+    if systemctl is-active --quiet firewalld 2>/dev/null; then
+        log "Apro porta 5432/tcp su firewalld..."
+        firewall-cmd --permanent --add-service=postgresql
+        firewall-cmd --reload
+    else
+        log "firewalld non attivo, salto configurazione firewall"
+    fi
+}
+
+setup_database() {
+    log "Creo database, utente e schema..."
+    run_as_postgres psql -v ON_ERROR_STOP=1 <<EOF
+SELECT 'CREATE DATABASE ${DB_NAME}' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DB_NAME}')\gexec
+DO \$\$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${DB_USER}') THEN
+        CREATE ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';
+    ELSE
+        ALTER ROLE ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';
+    END IF;
+END
+\$\$;
+GRANT CONNECT ON DATABASE ${DB_NAME} TO ${DB_USER};
+EOF
+
+    run_as_postgres psql -v ON_ERROR_STOP=1 -d "$DB_NAME" -f "$SCHEMA_FILE"
+
+    run_as_postgres psql -v ON_ERROR_STOP=1 -d "$DB_NAME" <<EOF
+GRANT INSERT, SELECT ON conteggi_pezzi TO ${DB_USER};
+GRANT USAGE, SELECT ON SEQUENCE conteggi_pezzi_id_seq TO ${DB_USER};
+EOF
+}
+
 start_service() {
     if ! start_postgres; then
         printf '\n[fix-postgres] Diagnostica:\n' >&2
         systemctl status "${PG_SERVICE}" --no-pager -l 2>/dev/null || true
         journalctl -u "${PG_SERVICE}" -n 30 --no-pager 2>/dev/null || true
         tail -30 "${PG_DATA}/log/postgresql.log" 2>/dev/null || true
-        die "PostgreSQL ancora non parte. Prova: sudo ./start-postgres.sh"
+        die "PostgreSQL non avviato. Prova: sudo ./start-postgres.sh start"
     fi
     install_container_autostart "${SCRIPT_DIR}/start-postgres.sh"
-    log "Fix completato."
+}
+
+show_summary() {
+    local ip listen
+    ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    listen="$(detect_listen_addresses)"
+    cat <<EOF
+
+Setup completato.
+
+Database : ${DB_NAME}
+Utente   : ${DB_USER}
+Porta    : 5432
+Listen   : ${listen}
+Servizio : ${PG_SERVICE}
+
+Configura i Raspberry (.env):
+  DB_HOST=${ip:-IP_DEL_CONTAINER}
+  DB_PORT=5432
+  DB_NAME=${DB_NAME}
+  DB_USER=${DB_USER}
+  DB_PASSWORD=<la password scelta>
+
+Entra in PostgreSQL:
+  sudo -u postgres psql -d ${DB_NAME}
+  psql -U ${DB_USER} -d ${DB_NAME} -h 127.0.0.1 -W
+
+Verifica:
+  sudo ./start-postgres.sh status
+
+EOF
 }
 
 main() {
     require_root
+    prompt_password
+    install_packages
     detect_service
-    detect_data_dir
     init_cluster_if_missing
     fix_permissions
     fix_selinux
@@ -95,7 +192,9 @@ main() {
     write_pg_hba_file
     validate_postgres_config
     start_service
-    log "Verifica: sudo ./start-postgres.sh status"
+    configure_firewall
+    setup_database
+    show_summary
 }
 
 main "$@"
