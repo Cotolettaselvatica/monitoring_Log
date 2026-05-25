@@ -96,10 +96,122 @@ python-dotenv>=1.0.1
 
 ## Database PostgreSQL
 
-### Creazione tabella (da eseguire una volta sul server PostgreSQL)
+### Container Proxmox LXC
+
+Se PostgreSQL gira in un **container LXC** su Proxmox, l'errore `failed with result exit-code` e' spesso causato da **systemd non funzionante** nel container (non da PostgreSQL in se').
+
+**Opzione A — Abilita systemd nel container (Proxmox host)**
+
+Nelle opzioni del CT su Proxmox aggiungi:
+
+```
+features: nesting=1,keyctl=1
+```
+
+Poi nel container Rocky:
 
 ```bash
-psql -U postgres -d industria -f sql/schema.sql
+sudo ./fix-postgres-rocky.sh
+```
+
+**Opzione B — Avvio senza systemd (consigliato nei CT)**
+
+```bash
+cd UNIX_log_aggregator/sql
+chmod +x fix-postgres-rocky.sh start-postgres.sh
+sudo ./fix-postgres-rocky.sh
+sudo ./start-postgres.sh start
+sudo ./start-postgres.sh status
+```
+
+Comandi utili:
+
+```bash
+sudo ./start-postgres.sh start    # avvia
+sudo ./start-postgres.sh stop     # ferma
+sudo ./start-postgres.sh restart  # riavvia
+sudo ./start-postgres.sh status   # verifica
+```
+
+Lo script configura anche l'avvio automatico via `/etc/rc.d/rc.local` se systemd non e' disponibile.
+
+**Nota Proxmox:** assicurati che la porta 5432 del container sia raggiungibile dalla LAN (firewall Proxmox/host e IP del CT corretto per i Raspberry).
+
+### Setup automatico su Rocky Linux (consigliato)
+
+Sul server Rocky, copia la cartella del progetto e lancia:
+
+```bash
+cd UNIX_log_aggregator/sql
+chmod +x setup-rocky.sh
+sudo ./setup-rocky.sh
+```
+
+Lo script:
+1. Installa `postgresql-server` via `dnf`
+2. Inizializza il cluster e avvia il servizio
+3. Configura ascolto di rete e `pg_hba.conf` (accesso da tutte le subnet)
+4. Apre la porta 5432 su `firewalld` (se attivo)
+5. Crea database `raspberry_counter`, utente `contatore` e tabella `conteggi_pezzi`
+
+Parametri opzionali (senza prompt):
+
+```bash
+sudo DB_PASSWORD='password_sicura' ./setup-rocky.sh
+```
+
+| Variabile | Default | Descrizione |
+|-----------|---------|-------------|
+| `DB_NAME` | `raspberry_counter` | Nome database |
+| `DB_USER` | `contatore` | Utente per i Raspberry |
+| `DB_PASSWORD` | (prompt) | Password utente |
+
+### Setup manuale su Rocky Linux
+
+```bash
+# 1. Installazione
+sudo dnf install -y postgresql-server postgresql-contrib
+sudo postgresql-setup --initdb
+sudo systemctl enable --now postgresql
+
+# 2. Rete — modifica /var/lib/pgsql/data/postgresql.conf
+#    listen_addresses = '*'
+
+# 3. Accesso da tutte le subnet — aggiungi in /var/lib/pgsql/data/pg_hba.conf
+#    host    all    all    0.0.0.0/0    scram-sha-256
+#    host    all    all    ::/0         scram-sha-256
+
+sudo systemctl restart postgresql
+
+# 4. Firewall
+sudo firewall-cmd --permanent --add-service=postgresql
+sudo firewall-cmd --reload
+
+# 5. Database e utente
+sudo -u postgres psql <<'EOF'
+CREATE DATABASE raspberry_counter;
+CREATE USER contatore WITH PASSWORD 'password_sicura';
+GRANT CONNECT ON DATABASE raspberry_counter TO contatore;
+EOF
+
+sudo -u postgres psql -d raspberry_counter -f sql/schema.sql
+sudo -u postgres psql -d raspberry_counter <<'EOF'
+GRANT INSERT, SELECT ON conteggi_pezzi TO contatore;
+GRANT USAGE, SELECT ON SEQUENCE conteggi_pezzi_id_seq TO contatore;
+EOF
+```
+
+Verifica:
+
+```bash
+sudo systemctl status postgresql
+psql -U contatore -d raspberry_counter -h localhost -W
+```
+
+### Creazione tabella (se non usi setup-rocky.sh)
+
+```bash
+psql -U postgres -d raspberry_counter -f sql/schema.sql
 ```
 
 ### Schema
@@ -120,7 +232,7 @@ CREATE INDEX IF NOT EXISTS idx_conteggi_pezzi_macchinario_ts
 
 ```sql
 CREATE USER contatore WITH PASSWORD 'password_sicura';
-GRANT CONNECT ON DATABASE industria TO contatore;
+GRANT CONNECT ON DATABASE raspberry_counter TO contatore;
 GRANT INSERT, SELECT ON conteggi_pezzi TO contatore;
 GRANT USAGE, SELECT ON SEQUENCE conteggi_pezzi_id_seq TO contatore;
 ```
@@ -164,7 +276,7 @@ NOME_PEZZO=ComponenteXYZ
 # PostgreSQL sulla rete locale
 DB_HOST=192.168.1.100
 DB_PORT=5432
-DB_NAME=industria
+DB_NAME=raspberry_counter
 DB_USER=contatore
 DB_PASSWORD=cambia_questa_password
 
@@ -231,7 +343,7 @@ sudo ./deploy.sh \
   --nome-macchinario Linea1_MacchinaA \
   --nome-pezzo ComponenteXYZ \
   --db-host 192.168.1.100 \
-  --db-name industria \
+  --db-name raspberry_counter \
   --db-user contatore \
   --db-password password_sicura
 ```
@@ -297,7 +409,7 @@ Impostare almeno:
 NOME_MACCHINARIO=NomeUnivocoMacchina
 NOME_PEZZO=NomePezzo
 DB_HOST=192.168.x.x
-DB_NAME=industria
+DB_NAME=raspberry_counter
 DB_USER=contatore
 DB_PASSWORD=password_reale
 ```
@@ -399,7 +511,7 @@ sudo ./deploy.sh \
   --nome-macchinario Linea1_MacchinaA \
   --nome-pezzo ComponenteXYZ \
   --db-host 192.168.1.100 \
-  --db-name industria \
+  --db-name raspberry_counter \
   --db-user contatore \
   --db-password password_sicura
 
@@ -408,7 +520,7 @@ sudo ./deploy.sh \
   --nome-macchinario Linea1_MacchinaB \
   --nome-pezzo ComponenteXYZ \
   --db-host 192.168.1.100 \
-  --db-name industria \
+  --db-name raspberry_counter \
   --db-user contatore \
   --db-password password_sicura
 ```
@@ -446,10 +558,39 @@ Cause comuni:
 
 ```bash
 # Dal Raspberry, test connessione
-psql -h 192.168.1.100 -U contatore -d industria
+psql -h 192.168.1.100 -U contatore -d raspberry_counter
 ```
 
-Verificare che PostgreSQL accetti connessioni dalla rete locale (`pg_hba.conf` e `listen_addresses` in `postgresql.conf`).
+Verificare che PostgreSQL accetti connessioni di rete (`pg_hba.conf` con `0.0.0.0/0` e `listen_addresses = '*'` in `postgresql.conf`).
+
+### PostgreSQL non parte (failed with exit-code)
+
+Sul server Rocky esegui:
+
+```bash
+sudo systemctl status postgresql -l
+sudo journalctl -u postgresql -n 50 --no-pager
+sudo -u postgres postgres -D /var/lib/pgsql/data --check-config
+```
+
+Cause frequenti e fix:
+
+| Errore | Soluzione |
+|--------|-----------|
+| Cluster non inizializzato | `sudo postgresql-setup --initdb` |
+| Directory dati corrotta/vuota | `sudo rm -rf /var/lib/pgsql/data && sudo postgresql-setup --initdb` |
+| `pg_hba.conf` non valido | controlla sintassi in `/var/lib/pgsql/data/pg_hba.conf` |
+| Permessi errati | `sudo chown -R postgres:postgres /var/lib/pgsql` |
+| SELinux | `sudo setsebool -P postgresql_can_network_connect on` |
+| Porta 5432 occupata | `sudo ss -lntp \| grep 5432` |
+
+Poi rilancia lo script aggiornato:
+
+```bash
+sudo DB_PASSWORD='tua_password' ./setup-rocky.sh
+```
+
+Lo script ora valida la config prima dell'avvio e stampa automaticamente i log se fallisce.
 
 ### Conteggi doppi o mancanti
 

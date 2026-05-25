@@ -1,0 +1,4 @@
+mariadb>=1.1.0
+smbprotocol>=1.13.0
+python-dotenv>=1.0.1
+PyYAML>=6.0.1

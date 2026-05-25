@@ -1,0 +1,20 @@
+machines:
+  - id: linea1_macchina_a
+    smb_host: 192.168.1.10
+    smb_share: logs
+    log_path: pezzi.log
+    username: pi
+    password: password_pi
+    domain: ""
+    nome_macchinario: Linea1_MacchinaA
+    nome_pezzo: ComponenteXYZ
+
+  - id: linea1_macchina_b
+    smb_host: 192.168.1.11
+    smb_share: logs
+    log_path: pezzi.log
+    username: pi
+    password: password_pi
+    domain: ""
+    nome_macchinario: Linea1_MacchinaB
+    nome_pezzo: ComponenteXYZ

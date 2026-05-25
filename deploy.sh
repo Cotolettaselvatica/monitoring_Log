@@ -24,7 +24,7 @@ Deploy contatore pezzi su Raspberry Pi.
 Uso:
   sudo ./deploy.sh
   sudo ./deploy.sh --nome-macchinario Linea1_MacchinaA --nome-pezzo ComponenteXYZ \
-    --db-host 192.168.1.100 --db-name industria --db-user contatore --db-password secret
+    --db-host 192.168.1.100 --db-name raspberry_counter --db-user contatore --db-password secret
 
 Opzioni:
   --nome-macchinario   Nome univoco della macchina (obbligatorio)
