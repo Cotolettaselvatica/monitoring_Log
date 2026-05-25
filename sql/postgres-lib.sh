@@ -54,9 +54,72 @@ postgres_pg_ctl() {
 }
 
 postgres_is_running() {
+    if command -v pg_isready >/dev/null 2>&1; then
+        if pg_isready -h 127.0.0.1 -p 5432 -q 2>/dev/null \
+            || pg_isready -h localhost -p 5432 -q 2>/dev/null \
+            || pg_isready -q 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    if [[ -n "$PG_DATA" && -f "${PG_DATA}/postmaster.pid" ]]; then
+        local pid
+        pid="$(head -1 "${PG_DATA}/postmaster.pid" 2>/dev/null || true)"
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    if systemctl is-active --quiet "${PG_SERVICE}" 2>/dev/null; then
+        return 0
+    fi
+
     local pg_ctl
     pg_ctl="$(postgres_pg_ctl)"
-    [[ -n "$pg_ctl" ]] && run_as_postgres "$pg_ctl" status -D "$PG_DATA" >/dev/null 2>&1
+    if [[ -n "$pg_ctl" && -n "$PG_DATA" ]]; then
+        run_as_postgres "$pg_ctl" status -D "$PG_DATA" >/dev/null 2>&1 && return 0
+    fi
+
+    return 1
+}
+
+postgres_status_details() {
+    local pg_ctl
+    pg_ctl="$(postgres_pg_ctl)"
+
+    pg_log "PG_DATA=${PG_DATA:-non impostato}"
+    if command -v pg_isready >/dev/null 2>&1; then
+        pg_log "pg_isready: $(pg_isready -h 127.0.0.1 -p 5432 2>&1 || true)"
+    fi
+    if [[ -n "$PG_DATA" && -f "${PG_DATA}/postmaster.pid" ]]; then
+        pg_log "postmaster.pid: $(head -1 "${PG_DATA}/postmaster.pid" 2>/dev/null || echo assente)"
+    fi
+    if systemctl is-active "${PG_SERVICE}" >/dev/null 2>&1; then
+        pg_log "systemd ${PG_SERVICE}: $(systemctl is-active "${PG_SERVICE}" 2>&1 || true)"
+    fi
+    if [[ -n "$pg_ctl" && -n "$PG_DATA" ]]; then
+        pg_log "pg_ctl status:"
+        run_as_postgres "$pg_ctl" status -D "$PG_DATA" 2>&1 || true
+    fi
+}
+
+stop_postgres() {
+    if systemctl is-active --quiet "${PG_SERVICE}" 2>/dev/null; then
+        pg_log "Fermo PostgreSQL via systemd..."
+        systemctl stop "${PG_SERVICE}" 2>/dev/null || true
+    fi
+
+    local pg_ctl
+    pg_ctl="$(postgres_pg_ctl)"
+    if [[ -n "$pg_ctl" && -n "$PG_DATA" ]]; then
+        if run_as_postgres "$pg_ctl" status -D "$PG_DATA" >/dev/null 2>&1 \
+            || [[ -f "${PG_DATA}/postmaster.pid" ]]; then
+            pg_log "Fermo PostgreSQL via pg_ctl..."
+            run_as_postgres "$pg_ctl" stop -D "$PG_DATA" -w -t 20 -m fast 2>/dev/null || true
+        fi
+    fi
+
+    ! postgres_is_running
 }
 
 detect_listen_addresses() {

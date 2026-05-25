@@ -31,10 +31,10 @@ cmd_start() {
 
 cmd_stop() {
     detect_data_dir
-    local pg_ctl
-    pg_ctl="$(postgres_pg_ctl)"
-    [[ -n "$pg_ctl" ]] || die "pg_ctl non trovato"
-    sudo -u postgres "$pg_ctl" stop -D "$PG_DATA" -w -t 20 || true
+    stop_postgres || true
+    if postgres_is_running; then
+        die "PostgreSQL ancora in esecuzione"
+    fi
     log "PostgreSQL fermato"
 }
 
@@ -42,11 +42,14 @@ cmd_status() {
     detect_data_dir
     if postgres_is_running; then
         log "PostgreSQL IN ESECUZIONE"
-        sudo -u postgres psql -c "SELECT version();" 2>/dev/null || true
-    else
-        log "PostgreSQL NON in esecuzione"
-        exit 1
+        postgres_status_details
+        run_as_postgres psql -c "SELECT version();" 2>/dev/null || true
+        return 0
     fi
+
+    log "PostgreSQL NON in esecuzione (secondo i controlli combinati)"
+    postgres_status_details
+    exit 1
 }
 
 case "${1:-start}" in
