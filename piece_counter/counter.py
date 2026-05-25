@@ -28,7 +28,7 @@ def stop_handler(signum, frame) -> None:
     running = False
 
 
-def on_falling_edge(
+def on_piece_detected(
     channel: int,
     repository: PieceRepository,
     nome_macchinario: str,
@@ -47,25 +47,34 @@ def on_falling_edge(
         logger.exception("Impossibile registrare il pezzo su PostgreSQL")
 
 
-def setup_gpio_pin(pin: int) -> None:
+def setup_gpio_pin(pin: int, idle: str) -> None:
     GPIO.setwarnings(False)
     GPIO.cleanup()
     GPIO.setmode(GPIO.BCM)
-    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+    if idle == "low":
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    else:
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 
-def poll_falling_edges(pin: int, debounce_ms: int, callback) -> None:
+def poll_edges(pin: int, debounce_ms: int, idle: str, callback) -> None:
     last_state = GPIO.input(pin)
     last_trigger_ms = 0.0
 
     while running:
         state = GPIO.input(pin)
         now_ms = time.monotonic() * 1000
+        edge_detected = False
 
-        if last_state == GPIO.HIGH and state == GPIO.LOW:
-            if now_ms - last_trigger_ms >= debounce_ms:
-                last_trigger_ms = now_ms
-                callback(pin)
+        if idle == "low":
+            edge_detected = last_state == GPIO.LOW and state == GPIO.HIGH
+        else:
+            edge_detected = last_state == GPIO.HIGH and state == GPIO.LOW
+
+        if edge_detected and now_ms - last_trigger_ms >= debounce_ms:
+            last_trigger_ms = now_ms
+            callback(pin)
 
         last_state = state
         time.sleep(0.001)
@@ -91,7 +100,7 @@ def main() -> int:
         return 1
 
     gpio_pin = settings.gpio_pin
-    callback = lambda channel: on_falling_edge(
+    callback = lambda channel: on_piece_detected(
         channel,
         repository,
         settings.nome_macchinario,
@@ -99,21 +108,24 @@ def main() -> int:
     )
 
     try:
-        setup_gpio_pin(gpio_pin)
+        setup_gpio_pin(gpio_pin, settings.gpio_idle)
     except Exception:
         logger.exception("Inizializzazione GPIO fallita")
         repository.close()
         return 1
 
+    edge_label = "0->1" if settings.gpio_idle == "low" else "1->0"
     logger.info(
-        "Contatore avviato: macchinario=%s pezzo=%s gpio=%s (polling)",
+        "Contatore avviato: macchinario=%s pezzo=%s gpio=%s idle=%s edge=%s (polling)",
         settings.nome_macchinario,
         settings.nome_pezzo,
         gpio_pin,
+        settings.gpio_idle,
+        edge_label,
     )
 
     try:
-        poll_falling_edges(gpio_pin, settings.debounce_ms, callback)
+        poll_edges(gpio_pin, settings.debounce_ms, settings.gpio_idle, callback)
     finally:
         GPIO.cleanup(gpio_pin)
         repository.close()

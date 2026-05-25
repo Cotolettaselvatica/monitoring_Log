@@ -15,6 +15,7 @@ DB_NAME=""
 DB_USER=""
 DB_PASSWORD=""
 GPIO_PIN="10"
+GPIO_IDLE="high"
 DEBOUNCE_MS="200"
 
 usage() {
@@ -35,6 +36,7 @@ Opzioni:
   --db-user            Utente PostgreSQL (obbligatorio)
   --db-password        Password PostgreSQL (obbligatorio)
   --gpio-pin           Pin GPIO BCM (default: 10)
+  --gpio-idle          Stato GPIO a riposo: high o low (default: high)
   --debounce-ms        Antirimbalzo in ms (default: 200)
   --service-user       Utente Linux del servizio (default: utente sudo o koman)
   -h, --help           Mostra questo messaggio
@@ -98,6 +100,12 @@ validate_required() {
     if [[ "$missing" -eq 1 ]]; then
         die "Compila tutti i campi obbligatori."
     fi
+
+    case "${GPIO_IDLE,,}" in
+        high|h|1) GPIO_IDLE="high" ;;
+        low|l|0) GPIO_IDLE="low" ;;
+        *) die "GPIO_IDLE non valido: usa 'high' o 'low'" ;;
+    esac
 }
 
 parse_args() {
@@ -133,6 +141,10 @@ parse_args() {
                 ;;
             --gpio-pin)
                 GPIO_PIN="$2"
+                shift 2
+                ;;
+            --gpio-idle)
+                GPIO_IDLE="$2"
                 shift 2
                 ;;
             --debounce-ms)
@@ -179,6 +191,9 @@ collect_inputs() {
     if [[ -z "$GPIO_PIN" ]]; then
         prompt_value GPIO_PIN "Pin GPIO BCM" "10"
     fi
+    if [[ -z "$GPIO_IDLE" ]]; then
+        prompt_value GPIO_IDLE "Stato GPIO a riposo (high=1, low=0)" "high"
+    fi
     if [[ -z "$DEBOUNCE_MS" ]]; then
         prompt_value DEBOUNCE_MS "Antirimbalzo (ms)" "200"
     fi
@@ -198,6 +213,7 @@ DB_USER=${DB_USER}
 DB_PASSWORD=${DB_PASSWORD}
 
 GPIO_PIN=${GPIO_PIN}
+GPIO_IDLE=${GPIO_IDLE}
 DEBOUNCE_MS=${DEBOUNCE_MS}
 EOF
     chmod 600 "$ENV_FILE"
@@ -293,7 +309,7 @@ Deploy completato.
 Macchinario : ${NOME_MACCHINARIO}
 Pezzo       : ${NOME_PEZZO}
 Database    : ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME}
-GPIO        : ${GPIO_PIN} (BCM)
+GPIO        : ${GPIO_PIN} (BCM), idle=${GPIO_IDLE}
 Servizio    : ${SERVICE_NAME}
 
 Comandi utili:

@@ -14,6 +14,7 @@ class Settings:
     db_user: str
     db_password: str
     gpio_pin: int
+    gpio_idle: str
     debounce_ms: int
 
 
@@ -22,6 +23,18 @@ def _require(name: str) -> str:
     if not value:
         raise ValueError(f"Variabile d'ambiente obbligatoria mancante: {name}")
     return value
+
+
+def _parse_gpio_idle(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in ("high", "1", "h"):
+        return "high"
+    if normalized in ("low", "0", "l"):
+        return "low"
+    raise ValueError(
+        "GPIO_IDLE non valido: usa 'high' (riposo=1, conta su 1->0) "
+        "oppure 'low' (riposo=0, conta su 0->1)"
+    )
 
 
 def load_settings(env_file: str | None = None) -> Settings:
@@ -40,5 +53,6 @@ def load_settings(env_file: str | None = None) -> Settings:
         db_user=_require("DB_USER"),
         db_password=_require("DB_PASSWORD"),
         gpio_pin=int(os.getenv("GPIO_PIN", "10")),
+        gpio_idle=_parse_gpio_idle(os.getenv("GPIO_IDLE", "high")),
         debounce_ms=int(os.getenv("DEBOUNCE_MS", "200")),
     )
