@@ -47,38 +47,28 @@ def on_falling_edge(
         logger.exception("Impossibile registrare il pezzo su PostgreSQL")
 
 
-def setup_gpio(pin: int, debounce_ms: int, callback) -> None:
+def setup_gpio_pin(pin: int) -> None:
     GPIO.setwarnings(False)
     GPIO.cleanup()
-
-    try:
-        GPIO.remove_event_detect(pin)
-    except (RuntimeError, ValueError):
-        pass
-
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-    try:
-        GPIO.add_event_detect(
-            pin,
-            GPIO.FALLING,
-            callback=callback,
-            bouncetime=debounce_ms,
-        )
-    except RuntimeError as exc:
-        raise RuntimeError(
-            f"Impossibile registrare edge detection su GPIO {pin}. "
-            f"Verifica permessi (gruppo gpio) e che il pin non sia gia' in uso."
-        ) from exc
 
+def poll_falling_edges(pin: int, debounce_ms: int, callback) -> None:
+    last_state = GPIO.input(pin)
+    last_trigger_ms = 0.0
 
-def cleanup_gpio(pin: int) -> None:
-    try:
-        GPIO.remove_event_detect(pin)
-    except (RuntimeError, ValueError):
-        pass
-    GPIO.cleanup(pin)
+    while running:
+        state = GPIO.input(pin)
+        now_ms = time.monotonic() * 1000
+
+        if last_state == GPIO.HIGH and state == GPIO.LOW:
+            if now_ms - last_trigger_ms >= debounce_ms:
+                last_trigger_ms = now_ms
+                callback(pin)
+
+        last_state = state
+        time.sleep(0.001)
 
 
 def main() -> int:
@@ -109,24 +99,23 @@ def main() -> int:
     )
 
     try:
-        setup_gpio(gpio_pin, settings.debounce_ms, callback)
-    except RuntimeError:
+        setup_gpio_pin(gpio_pin)
+    except Exception:
         logger.exception("Inizializzazione GPIO fallita")
         repository.close()
         return 1
 
     logger.info(
-        "Contatore avviato: macchinario=%s pezzo=%s gpio=%s",
+        "Contatore avviato: macchinario=%s pezzo=%s gpio=%s (polling)",
         settings.nome_macchinario,
         settings.nome_pezzo,
         gpio_pin,
     )
 
     try:
-        while running:
-            time.sleep(1)
+        poll_falling_edges(gpio_pin, settings.debounce_ms, callback)
     finally:
-        cleanup_gpio(gpio_pin)
+        GPIO.cleanup(gpio_pin)
         repository.close()
         logger.info("Contatore terminato")
 
