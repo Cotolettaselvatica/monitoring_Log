@@ -201,7 +201,7 @@ GPIO_PIN=${GPIO_PIN}
 DEBOUNCE_MS=${DEBOUNCE_MS}
 EOF
     chmod 600 "$ENV_FILE"
-    chown root:root "$ENV_FILE"
+    chown "${SERVICE_USER}:${SERVICE_USER}" "$ENV_FILE"
 }
 
 install_application() {
