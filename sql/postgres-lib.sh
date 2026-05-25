@@ -123,20 +123,28 @@ stop_postgres() {
     ! postgres_is_running
 }
 
+sanitize_listen_value() {
+    local value="$1"
+    value="${value//$'\n'/}"
+    value="${value//$'\r'/}"
+    value="${value//\'/}"
+    printf '%s' "$value"
+}
+
 detect_listen_addresses() {
+    local ip=""
     if [[ -n "${LISTEN_ADDRESSES:-}" ]]; then
-        printf '%s' "$LISTEN_ADDRESSES"
+        sanitize_listen_value "$LISTEN_ADDRESSES"
         return
     fi
     if is_container; then
-        local ip=""
         ip="$(hostname -I 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i != "127.0.0.1") { print $i; exit }}')"
         if [[ -z "$ip" ]] && command -v ip >/dev/null 2>&1; then
             ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
         fi
         if [[ -n "$ip" ]]; then
-            pg_log "Container LXC: uso IP ${ip} (bind su 0.0.0.0 non permesso)"
-            printf '127.0.0.1,%s' "$ip"
+            pg_log "Container LXC: listen su 127.0.0.1 e ${ip}"
+            sanitize_listen_value "127.0.0.1,${ip}"
             return
         fi
         pg_log "Container LXC: fallback su localhost"
@@ -146,22 +154,35 @@ detect_listen_addresses() {
     printf '*'
 }
 
-cleanup_main_postgresql_conf() {
+repair_corrupted_postgresql_conf() {
     local pg_conf="${PG_DATA}/postgresql.conf"
+    local dropin_file="${PG_DATA}/conf.d/${PG_DROPIN_NAME}"
     local tmp
 
     [[ -f "$pg_conf" ]] || return 0
 
-    pg_log "Ripulisco listen_addresses/logging_collector dal postgresql.conf principale..."
+    pg_log "Riparo postgresql.conf da righe listen_addresses corrotte..."
     tmp="$(mktemp)"
     awk '
-        /^[[:space:]]*listen_addresses[[:space:]]*=/ { next }
+        /listen_addresses/ { next }
         /^[[:space:]]*logging_collector[[:space:]]*=/ { next }
+        /^[[:space:]]*'\''127\./ { next }
+        /^[[:space:]]*127\.[0-9]+\.[0-9]+\.[0-9]+/ { next }
+        /^[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'\''/ { next }
+        /^[[:space:]]*'\''[[:space:]]*$/ { next }
         { print }
     ' "$pg_conf" >"$tmp"
     mv "$tmp" "$pg_conf"
     chown postgres:postgres "$pg_conf"
     chmod 600 "$pg_conf"
+
+    if [[ -f "$dropin_file" ]]; then
+        rm -f "$dropin_file"
+    fi
+}
+
+cleanup_main_postgresql_conf() {
+    repair_corrupted_postgresql_conf
 }
 
 ensure_conf_d_included() {
@@ -181,26 +202,36 @@ ensure_conf_d_included() {
 write_postgres_dropin_conf() {
     local dropin_dir="${PG_DATA}/conf.d"
     local dropin_file="${dropin_dir}/${PG_DROPIN_NAME}"
-    local listen_value
+    local listen_value postgres_bin
 
     listen_value="$(detect_listen_addresses)"
+    listen_value="$(sanitize_listen_value "$listen_value")"
     mkdir -p "$dropin_dir"
 
     pg_log "Scrivo ${dropin_file} (listen_addresses=${listen_value})..."
-    cat >"$dropin_file" <<EOF
-# Generato da Industria 5.0 - non modificare postgresql.conf manualmente
-listen_addresses = '${listen_value}'
-logging_collector = off
-EOF
+    {
+        printf '%s\n' "# Generato da Industria 5.0"
+        printf "listen_addresses = '%s'\n" "$listen_value"
+        printf '%s\n' "logging_collector = off"
+    } >"$dropin_file"
 
     chown postgres:postgres "$dropin_file"
     chmod 600 "$dropin_file"
+
+    postgres_bin="$(command -v postgres 2>/dev/null || true)"
+    if [[ -n "$postgres_bin" ]] && postgres_supports_check_config; then
+        if ! run_as_postgres "$postgres_bin" -D "$PG_DATA" --check-config >/tmp/pg-check.log 2>&1; then
+            pg_log "Configurazione non valida dopo scrittura drop-in:"
+            cat /tmp/pg-check.log >&2
+            return 1
+        fi
+    fi
 }
 
 set_listen_addresses() {
-    cleanup_main_postgresql_conf
+    repair_corrupted_postgresql_conf
     ensure_conf_d_included
-    write_postgres_dropin_conf
+    write_postgres_dropin_conf || return 1
 }
 
 fix_logging_collector() {

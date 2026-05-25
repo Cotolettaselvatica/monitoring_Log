@@ -208,7 +208,7 @@ main() {
     fix_permissions
     fix_selinux
     fix_logging_collector
-    set_listen_addresses
+    set_listen_addresses || die "Impossibile scrivere configurazione PostgreSQL valida"
     write_pg_hba_file
     validate_postgres_config
     start_service
