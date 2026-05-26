@@ -82,9 +82,14 @@ def load_settings(
 
     base_dir = Path(os.getenv("AGGREGATOR_BASE_DIR", Path.cwd()))
     machines_config = Path(
-        machines_file or os.getenv("MACHINES_CONFIG", base_dir / "config" / "machines.yaml")
+        machines_file or os.getenv("MACHINES_CONFIG", "config/machines.yaml")
     )
-    state_file = Path(os.getenv("STATE_FILE", base_dir / "state" / "offsets.json"))
+    state_file = Path(os.getenv("STATE_FILE", "state/offsets.json"))
+
+    if not machines_config.is_absolute():
+        machines_config = base_dir / machines_config
+    if not state_file.is_absolute():
+        state_file = base_dir / state_file
 
     return AggregatorSettings(
         db=DbSettings(

@@ -1,26 +1,25 @@
 # WIN Log Aggregator
 
-Servizio Windows (Python) che legge i log di produzione da **N macchinari via SMB**, importa ogni riga come un pezzo contato e li salva su **PostgreSQL** (stesso database dei Raspberry).
+Servizio **Rocky Linux** (Python) che legge i log di produzione dalle **macchine Windows via SMB**, importa ogni riga come un pezzo contato e li salva su **PostgreSQL** (stesso database dei Raspberry).
 
 ---
 
 ## Architettura
 
 ```
-Macchinario 1 (Raspberry/PC)          Macchinario N
-        |                                      |
-   pezzi.log su share SMB              pezzi.log su share SMB
+Macchina Windows 1                    Macchina Windows N
+   pezzi.log (share SMB)                 pezzi.log (share SMB)
         \                                      /
          \                                    /
           =====  Rete locale SMB  =====
                          |
-              PC Windows (questo aggregator)
+              Server Rocky Linux (questo aggregator)
                          |
                     PostgreSQL (raspberry_counter)
 ```
 
 1. Ogni macchinario scrive **una riga per pezzo** in un file di log esposto in una cartella SMB.
-2. L'aggregator gira in loop sul PC Windows (default ogni 30 secondi).
+2. L'aggregator gira in loop sul **server Rocky Linux** (default ogni 30 secondi).
 3. Per ogni macchina legge solo le **righe nuove** (tiene traccia dell'offset byte in `state/offsets.json`).
 4. Ogni riga valida viene inserita in PostgreSQL nella tabella `conteggi_pezzi`.
 5. `ON CONFLICT DO NOTHING` evita duplicati se una riga viene riletta.
@@ -96,7 +95,7 @@ SELECT * FROM conteggi_pezzi ORDER BY timestamp DESC LIMIT 20;
 
 SELECT nome_macchinario, COUNT(*) AS totale
 FROM conteggi_pezzi
-WHERE DATE(timestamp) = CURDATE()
+WHERE timestamp::date = CURRENT_DATE
 GROUP BY nome_macchinario;
 ```
 
@@ -172,62 +171,67 @@ Per aggiungere un macchinario: aggiungi una voce in `machines.yaml`. Non serve r
 
 ---
 
-## Installazione su Windows
+## Installazione su Rocky Linux
 
 ### Requisiti
 
-- Windows 10/11 o Windows Server
-- Python 3.11+
-- Accesso di rete alle share SMB dei macchinari
+- Rocky Linux 8/9 (o container LXC)
+- Python 3.9+
+- Accesso di rete alle share SMB delle macchine Windows
 - PostgreSQL raggiungibile in LAN (porta 5432)
 
 ### Setup
 
-```cmd
-install.bat
+```bash
+cd WIN_log_aggregator
+chmod +x install.sh run.sh
+sudo ./install.sh
 ```
 
 Poi modifica:
-1. `.env` — credenziali PostgreSQL
-2. `config/machines.yaml` — elenco macchinari e share SMB
+1. `/etc/win-log-aggregator.env` — credenziali PostgreSQL
+2. `/opt/win-log-aggregator/config/machines.yaml` — elenco macchine Windows e share SMB
 
-Esegui lo schema SQL su PostgreSQL:
+Esegui lo schema SQL su PostgreSQL (se non già fatto):
 
-```cmd
-psql -h 172.20.1.84 -U counter -d raspberry_counter -f sql\schema.sql
+```bash
+sudo -u postgres psql -d raspberry_counter -f sql/schema.sql
 ```
 
 ### Avvio
 
-```cmd
-run.bat
+Il servizio parte automaticamente con `install.sh`. Comandi utili:
+
+```bash
+sudo systemctl status win-log-aggregator.service
+journalctl -u win-log-aggregator.service -f
+sudo systemctl restart win-log-aggregator.service
 ```
 
-Oppure manualmente:
+Avvio manuale (sviluppo):
 
-```cmd
-.venv\Scripts\activate
-python -m aggregator.main
+```bash
+cp .env.example .env
+cp config/machines.example.yaml config/machines.yaml
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+./run.sh
 ```
-
-### Avvio automatico (Task Scheduler)
-
-1. Apri **Utilita di pianificazione** → **Crea attivita di base**
-2. Nome: `WIN Log Aggregator`
-3. Trigger: **All'avvio del computer**
-4. Azione: **Avvia programma**
-   - Programma: `C:\percorso\WIN_log_aggregator\run.bat`
-   - Inizia in: `C:\percorso\WIN_log_aggregator`
-5. Opzioni: esegui anche se l'utente non e' connesso, riavvia in caso di errore
 
 ---
 
-## Integrazione con i macchinari
+## Installazione su Windows (opzionale)
 
-Ogni macchinario deve:
+Per test locali puoi usare ancora `install.bat` e `run.bat`, ma in produzione l'aggregator va installato su **Rocky Linux**.
+
+---
+
+## Integrazione con le macchine Windows
+
+Ogni macchina Windows in produzione deve:
 
 1. Scrivere una riga nel file di log ad ogni pezzo prodotto
-2. Esporre la cartella del log via **Samba/SMB**
+2. Esporre la cartella del log via **condivisione SMB**
 
 ### Esempio scrittura log (Python)
 
@@ -240,16 +244,16 @@ def log_pezzo(path: str, macchinario: str, pezzo: str) -> None:
         f.write(f"{ts}|{macchinario}|{pezzo}\n")
 ```
 
-### Share SMB su Raspberry Pi (Samba)
+### Share SMB su macchina Windows
 
-```ini
-# /etc/samba/smb.conf
-[logs]
-   path = /var/log/produzione
-   browseable = yes
-   read only = yes
-   guest ok = no
-   valid users = pi
+1. Crea cartella es. `C:\Logs\produzione`
+2. Condividi in rete (es. share `logs`)
+3. Permetti accesso in lettura all'utente configurato in `machines.yaml`
+4. Verifica da Rocky Linux:
+
+```bash
+dnf install -y samba-client
+smbclient //IP_WINDOWS/logs -U utente_windows
 ```
 
 ---
@@ -271,7 +275,11 @@ WIN_log_aggregator/
 ├── state/              # Offset lettura (generato a runtime)
 ├── .env.example
 ├── requirements.txt
-├── install.bat
+├── systemd/
+│   └── win-log-aggregator.service
+├── install.sh
+├── run.sh
+├── install.bat          # opzionale, solo test su Windows
 ├── run.bat
 └── README.md
 ```
@@ -283,13 +291,13 @@ WIN_log_aggregator/
 ### Errore connessione SMB
 
 - Verifica IP, nome share e credenziali in `machines.yaml`
-- Da Windows prova: `\\192.168.1.10\logs` in Esplora risorse
-- Controlla firewall e che Samba sia attivo sul macchinario
+- Da Rocky Linux prova: `smbclient //IP/share -U utente`
+- Controlla firewall Windows e che la share sia accessibile in rete
 
 ### Errore connessione PostgreSQL
 
-```cmd
-psql -h 172.20.1.84 -U counter -d raspberry_counter
+```bash
+PGPASSWORD=CatisPg2026 psql -h 172.20.1.84 -U counter -d raspberry_counter
 ```
 
 Verifica che PostgreSQL accetti connessioni di rete (`pg_hba.conf` e `listen_addresses`).
@@ -302,10 +310,10 @@ Verifica che PostgreSQL accetti connessioni di rete (`pg_hba.conf` e `listen_add
 
 ### Log dell'aggregator
 
-L'output va su stdout. Se usi Task Scheduler, reindirizza su file:
+L'output va su journald:
 
-```cmd
-run.bat >> logs\aggregator.log 2>&1
+```bash
+journalctl -u win-log-aggregator.service -f
 ```
 
 ---
@@ -315,6 +323,6 @@ run.bat >> logs\aggregator.log 2>&1
 | Componente | Ruolo |
 |------------|-------|
 | `UNIX_log_aggregator` (Raspberry) | Conta pezzi via GPIO → PostgreSQL |
-| Share SMB su ogni macchinario | Espone `pezzi.log` in rete |
-| `WIN_log_aggregator` (questo) | Raccoglie i log SMB → PostgreSQL |
+| Macchine Windows | Scrivono `pezzi.log` su share SMB |
+| `WIN_log_aggregator` (Rocky Linux) | Raccoglie log SMB → PostgreSQL |
 | PostgreSQL `raspberry_counter` | Database centralizzato unico |

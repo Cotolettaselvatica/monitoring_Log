@@ -1,0 +1,17 @@
+[Unit]
+Description=Aggregatore log macchine Windows via SMB -> PostgreSQL
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=logagg
+WorkingDirectory=/opt/win-log-aggregator
+EnvironmentFile=/etc/win-log-aggregator.env
+Environment=AGGREGATOR_ENV=/etc/win-log-aggregator.env
+ExecStart=/opt/win-log-aggregator/.venv/bin/python -m aggregator.main
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
