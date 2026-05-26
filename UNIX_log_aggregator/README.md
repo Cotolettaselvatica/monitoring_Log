@@ -4,6 +4,23 @@ Script Python da eseguire in modo permanente su Raspberry Pi collegati alle cate
 
 Lo **stesso identico script** va installato su tutti i Raspberry: l'unica differenza tra le macchine è il file di configurazione con le variabili d'ambiente.
 
+### Repository Git
+
+```bash
+git clone https://github.com/Cotolettaselvatica/monitoring_Log.git
+cd monitoring_Log
+```
+
+Struttura del repository:
+
+```
+monitoring_Log/
+├── DB/
+│   └── test-db.sh              # Test connessione PostgreSQL
+├── UNIX_log_aggregator/        # Questo progetto (Raspberry Pi → PostgreSQL)
+└── WIN_log_aggregator/         # Aggregator log Windows via SMB → PostgreSQL
+```
+
 ---
 
 ## Indice
@@ -25,8 +42,10 @@ Lo **stesso identico script** va installato su tutti i Raspberry: l'unica differ
 ## Funzionamento
 
 1. Lo script resta in esecuzione continua sul Raspberry Pi.
-2. Monitora il **GPIO 10** in numerazione **BCM**.
-3. Ogni volta che il segnale passa da **1 → 0** (fronte di discesa) viene contato **un pezzo**.
+2. Monitora il **GPIO 10** in numerazione **BCM** con **polling** (compatibile con Pi OS recente).
+3. Ogni transizione rilevante sul pin viene contata **un pezzo**:
+   - con `GPIO_IDLE=high` (default): fronte di discesa **1 → 0**
+   - con `GPIO_IDLE=low`: fronte di salita **0 → 1**
 4. Viene eseguita una `INSERT` su PostgreSQL con:
    - `nome_macchinario` — identifica la macchina
    - `nome_pezzo` — identifica il tipo di pezzo prodotto
@@ -41,14 +60,17 @@ Lo **stesso identico script** va installato su tutti i Raspberry: l'unica differ
 |----------|--------|
 | Dispositivo | Raspberry Pi (con accesso GPIO) |
 | Pin GPIO | **10** (numerazione BCM) |
-| Evento contato | Transizione **HIGH → LOW** (1 → 0) |
-| Pull resistor | Pull-up interno attivo (`PUD_UP`) |
+| Evento contato | Dipende da `GPIO_IDLE`: **1→0** (default) o **0→1** |
+| Pull resistor | Pull-up o pull-down interno (`PUD_UP` / `PUD_DOWN`) |
 | Antirimbalzo | 200 ms (configurabile) |
+| Lettura | Polling software (non interrupt hardware) |
 
-### Collegamento tipico
+### Collegamento tipico (GPIO_IDLE=high)
 
-Il pin GPIO 10 è configurato con pull-up interno: a riposo legge **1 (HIGH)**.
+Il pin GPIO 10 e' configurato con pull-up interno: a riposo legge **1 (HIGH)**.
 Quando il sensore o il contatto porta il pin a **GND**, il segnale scende a **0 (LOW)** e viene contato un pezzo.
+
+Con `GPIO_IDLE=low` il comportamento e' invertito (riposo a 0, conteggio su salita a 1).
 
 ```
 GPIO 10 ──── sensore/contatto ──── GND
@@ -62,33 +84,42 @@ GPIO 10 ──── sensore/contatto ──── GND
 ## Struttura del progetto
 
 ```
-Industria5.0/
+UNIX_log_aggregator/
 ├── piece_counter/
 │   ├── __init__.py
 │   ├── config.py       # Caricamento variabili d'ambiente
 │   ├── db.py           # Connessione e INSERT su PostgreSQL
-│   └── counter.py      # Loop principale GPIO + gestione segnali
+│   └── counter.py      # Loop principale GPIO (polling) + gestione segnali
 ├── sql/
-│   └── schema.sql      # Schema tabella PostgreSQL
+│   ├── schema.sql      # Schema tabella PostgreSQL
+│   └── setup-postgres.sh   # Installazione PostgreSQL su Rocky Linux
 ├── systemd/
 │   └── piece-counter.service   # Servizio avvio automatico
 ├── .env.example        # Template configurazione per ogni Raspberry
 ├── deploy.sh           # Script di deploy automatico (consigliato)
-├── requirements.txt    # Dipendenze Python
+├── watch-gpio.sh       # Monitor live del pin GPIO (debug)
+├── requirements.txt    # Dipendenze Python (pip)
 └── README.md
 ```
 
-### Dipendenze Python
+### Dipendenze
+
+**Python (pip, installate da `deploy.sh`):**
 
 ```
-RPi.GPIO>=0.7.1
 psycopg2-binary>=2.9.9
 python-dotenv>=1.0.1
 ```
 
+**Sistema (apt, installate da `deploy.sh`):**
+
+```
+python3-venv python3-pip python3-rpi-lgpio
+```
+
 | Pacchetto | Uso |
 |-----------|-----|
-| `RPi.GPIO` | Lettura GPIO e rilevamento fronti di discesa |
+| `python3-rpi-lgpio` | Lettura GPIO (polling, compatibile con Pi OS recente) |
 | `psycopg2-binary` | Connessione e query PostgreSQL |
 | `python-dotenv` | Caricamento file `.env` / variabili d'ambiente |
 
@@ -111,67 +142,34 @@ features: nesting=1,keyctl=1
 Poi nel container Rocky:
 
 ```bash
-sudo ./fix-postgres-rocky.sh
+cd /opt/monitoring_Log/UNIX_log_aggregator/sql
+chmod +x setup-postgres.sh
+sudo ./setup-postgres.sh
 ```
-
-**Opzione B — Avvio senza systemd (consigliato nei CT)**
-
-```bash
-cd UNIX_log_aggregator/sql
-chmod +x fix-postgres-rocky.sh start-postgres.sh
-sudo ./fix-postgres-rocky.sh
-sudo ./start-postgres.sh start
-sudo ./start-postgres.sh status
-```
-
-Comandi utili:
-
-```bash
-sudo ./start-postgres.sh start    # avvia
-sudo ./start-postgres.sh stop     # ferma
-sudo ./start-postgres.sh restart  # riavvia
-sudo ./start-postgres.sh status   # verifica
-```
-
-Lo script configura anche l'avvio automatico via `/etc/rc.d/rc.local` se systemd non e' disponibile.
 
 **Nota Proxmox:** assicurati che la porta 5432 del container sia raggiungibile dalla LAN (firewall Proxmox/host e IP del CT corretto per i Raspberry).
 
-**Errore `could not bind to IPv4 0.0.0.0`:** nei container LXC non si puo' usare `listen_addresses = '*'`. Gli script impostano automaticamente l'IP del container (es. `127.0.0.1,171.20.1.84`). Per forzare manualmente:
-
-```bash
-sudo LISTEN_ADDRESSES='127.0.0.1,171.20.1.84' ./fix-postgres-rocky.sh
-```
+**Errore `could not bind to IPv4 0.0.0.0`:** nei container LXC non si puo' usare `listen_addresses = '*'`. Lo script imposta automaticamente l'IP del container (es. `127.0.0.1,172.20.1.84`).
 
 ### Setup automatico su Rocky Linux (consigliato)
 
-Sul server Rocky o container Proxmox, usa **`fix-postgres-rocky.sh`** — installa, configura e avvia tutto:
+Sul server Rocky o container Proxmox, usa **`setup-postgres.sh`** — installa, configura e avvia tutto:
 
 ```bash
-cd sql
-chmod +x fix-postgres-rocky.sh start-postgres.sh
-sudo ./fix-postgres-rocky.sh
+cd /opt/monitoring_Log/UNIX_log_aggregator/sql
+chmod +x setup-postgres.sh
+sudo ./setup-postgres.sh
 ```
 
-Lo script (`setup-rocky.sh` e' lo stesso script):
+Lo script:
 1. Installa `postgresql-server` via `dnf` (se mancante)
 2. Inizializza il cluster e avvia il servizio
 3. Configura ascolto di rete e `pg_hba.conf` (accesso da tutte le subnet)
 4. Apre la porta 5432 su `firewalld` (se attivo)
-5. Crea database `raspberry_counter`, utente `contatore` e tabella `conteggi_pezzi`
-6. Configura avvio automatico nel container LXC (se necessario)
+5. Crea database `raspberry_counter`, utente `counter` e tabella `conteggi_pezzi`
+6. Configura avvio automatico nel container LXC (se systemd non e' disponibile)
 
-Parametri opzionali (senza prompt):
-
-```bash
-sudo DB_PASSWORD='password_sicura' ./fix-postgres-rocky.sh
-```
-
-| Variabile | Default | Descrizione |
-|-----------|---------|-------------|
-| `DB_NAME` | `raspberry_counter` | Nome database |
-| `DB_USER` | `contatore` | Utente per i Raspberry |
-| `DB_PASSWORD` | (prompt) | Password utente |
+I valori di default sono definiti nello script (`DB_HOST_IP=172.20.1.84`, utente `counter`, password `CatisPg2026`). Modifica lo script prima dell'esecuzione se servono valori diversi.
 
 ### Setup manuale su Rocky Linux
 
@@ -197,14 +195,14 @@ sudo firewall-cmd --reload
 # 5. Database e utente
 sudo -u postgres psql <<'EOF'
 CREATE DATABASE raspberry_counter;
-CREATE USER contatore WITH PASSWORD 'password_sicura';
-GRANT CONNECT ON DATABASE raspberry_counter TO contatore;
+CREATE USER counter WITH PASSWORD 'password_sicura';
+GRANT CONNECT ON DATABASE raspberry_counter TO counter;
 EOF
 
-sudo -u postgres psql -d raspberry_counter -f sql/schema.sql
+sudo -u postgres psql -d raspberry_counter -f schema.sql
 sudo -u postgres psql -d raspberry_counter <<'EOF'
-GRANT INSERT, SELECT ON conteggi_pezzi TO contatore;
-GRANT USAGE, SELECT ON SEQUENCE conteggi_pezzi_id_seq TO contatore;
+GRANT INSERT, SELECT ON conteggi_pezzi TO counter;
+GRANT USAGE, SELECT ON SEQUENCE conteggi_pezzi_id_seq TO counter;
 EOF
 ```
 
@@ -212,13 +210,20 @@ Verifica:
 
 ```bash
 sudo systemctl status postgresql
-psql -U contatore -d raspberry_counter -h localhost -W
+psql -U counter -d raspberry_counter -h localhost -W
 ```
 
-### Creazione tabella (se non usi setup-rocky.sh)
+Oppure, da qualsiasi macchina con client `psql`:
 
 ```bash
-psql -U postgres -d raspberry_counter -f sql/schema.sql
+cd /opt/monitoring_Log/DB
+./test-db.sh
+```
+
+### Creazione tabella (se non usi setup-postgres.sh)
+
+```bash
+sudo -u postgres psql -d raspberry_counter -f UNIX_log_aggregator/sql/schema.sql
 ```
 
 ### Schema
@@ -238,10 +243,10 @@ CREATE INDEX IF NOT EXISTS idx_conteggi_pezzi_macchinario_ts
 ### Creazione utente PostgreSQL (consigliato)
 
 ```sql
-CREATE USER contatore WITH PASSWORD 'password_sicura';
-GRANT CONNECT ON DATABASE raspberry_counter TO contatore;
-GRANT INSERT, SELECT ON conteggi_pezzi TO contatore;
-GRANT USAGE, SELECT ON SEQUENCE conteggi_pezzi_id_seq TO contatore;
+CREATE USER counter WITH PASSWORD 'password_sicura';
+GRANT CONNECT ON DATABASE raspberry_counter TO counter;
+GRANT INSERT, SELECT ON conteggi_pezzi TO counter;
+GRANT USAGE, SELECT ON SEQUENCE conteggi_pezzi_id_seq TO counter;
 ```
 
 ### Query utili
@@ -281,14 +286,17 @@ NOME_MACCHINARIO=Linea1_MacchinaA
 NOME_PEZZO=ComponenteXYZ
 
 # PostgreSQL sulla rete locale
-DB_HOST=192.168.1.100
+DB_HOST=172.20.1.84
 DB_PORT=5432
 DB_NAME=raspberry_counter
-DB_USER=contatore
-DB_PASSWORD=cambia_questa_password
+DB_USER=counter
+DB_PASSWORD=CatisPg2026
 
 # GPIO BCM (default: pin 10)
 GPIO_PIN=10
+
+# Stato a riposo: high (1->0) o low (0->1)
+GPIO_IDLE=high
 
 # Antirimbalzo in millisecondi
 DEBOUNCE_MS=200
@@ -306,6 +314,7 @@ DEBOUNCE_MS=200
 | `DB_USER` | sì | — | Utente PostgreSQL |
 | `DB_PASSWORD` | sì | — | Password PostgreSQL |
 | `GPIO_PIN` | no | `10` | Pin GPIO in numerazione BCM |
+| `GPIO_IDLE` | no | `high` | Stato a riposo del pin: `high` (conta su 1→0) o `low` (conta su 0→1) |
 | `DEBOUNCE_MS` | no | `200` | Antirimbalzo in millisecondi |
 | `PIECE_COUNTER_ENV` | no | `/etc/piece-counter.env` | Percorso alternativo del file di configurazione |
 
@@ -327,10 +336,10 @@ Lo script `deploy.sh` installa tutto in un colpo solo: copia i file, crea il vir
 
 ### Modalità interattiva
 
-Copia la cartella del progetto sul Raspberry, poi:
+Clona o copia il repository sul Raspberry, poi:
 
 ```bash
-cd /percorso/Industria5.0
+cd /opt/monitoring_Log/UNIX_log_aggregator
 chmod +x deploy.sh
 sudo ./deploy.sh
 ```
@@ -349,10 +358,10 @@ Lo script chiede:
 sudo ./deploy.sh \
   --nome-macchinario Linea1_MacchinaA \
   --nome-pezzo ComponenteXYZ \
-  --db-host 192.168.1.100 \
+  --db-host 172.20.1.84 \
   --db-name raspberry_counter \
-  --db-user contatore \
-  --db-password password_sicura
+  --db-user counter \
+  --db-password CatisPg2026
 ```
 
 Opzioni aggiuntive:
@@ -361,8 +370,9 @@ Opzioni aggiuntive:
 |---------|---------|-------------|
 | `--db-port` | `5432` | Porta PostgreSQL |
 | `--gpio-pin` | `10` | Pin GPIO BCM |
+| `--gpio-idle` | `high` | Stato GPIO a riposo (`high` o `low`) |
 | `--debounce-ms` | `200` | Antirimbalzo in ms |
-| `--service-user` | utente `sudo` o `pi` | Utente Linux del servizio |
+| `--service-user` | utente `sudo` o `koman` | Utente Linux del servizio |
 
 ### Cosa fa lo script
 
@@ -384,7 +394,7 @@ Rilancia lo stesso comando sul Raspberry con i nuovi valori: lo script sovrascri
 
 ## Installazione manuale su Raspberry Pi
 
-Alternativa al deploy automatico. Eseguire i seguenti passaggi su **ogni** Raspberry Pi.
+Alternativa al deploy automatico. Eseguire i seguenti passaggi su **ogni** Raspberry Pi (dalla cartella `UNIX_log_aggregator/`).
 
 ### 1. Copia dei file
 
@@ -406,7 +416,7 @@ pip install -r requirements.txt
 ### 3. Configurazione macchina
 
 ```bash
-sudo cp /percorso/progetto/.env.example /etc/piece-counter.env
+sudo cp .env.example /etc/piece-counter.env
 sudo nano /etc/piece-counter.env
 ```
 
@@ -417,8 +427,8 @@ NOME_MACCHINARIO=NomeUnivocoMacchina
 NOME_PEZZO=NomePezzo
 DB_HOST=192.168.x.x
 DB_NAME=raspberry_counter
-DB_USER=contatore
-DB_PASSWORD=password_reale
+DB_USER=counter
+DB_PASSWORD=CatisPg2026
 ```
 
 ---
@@ -464,7 +474,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
+User=koman
 WorkingDirectory=/opt/piece-counter
 EnvironmentFile=/etc/piece-counter.env
 ExecStart=/opt/piece-counter/.venv/bin/python -m piece_counter.counter
@@ -475,11 +485,27 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-> Se l'utente del Raspberry non è `pi`, modificare la riga `User=` nel file di servizio.
+> Se l'utente del Raspberry non è `koman`, modificare la riga `User=` nel file di servizio o usare `--service-user` in `deploy.sh`.
+
+### Monitor GPIO live (debug)
+
+```bash
+cd /opt/monitoring_Log/UNIX_log_aggregator
+./watch-gpio.sh
+```
+
+Legge `GPIO_PIN` e `GPIO_IDLE` da `/etc/piece-counter.env` e mostra lo stato del pin in tempo reale.
 
 ---
 
 ## Test e verifica
+
+### Test connessione PostgreSQL
+
+```bash
+cd /opt/monitoring_Log/DB
+./test-db.sh
+```
 
 ### Test manuale (senza systemd)
 
@@ -517,19 +543,19 @@ Su ogni Raspberry Pi lancia `deploy.sh` cambiando solo nome macchina e pezzo (le
 sudo ./deploy.sh \
   --nome-macchinario Linea1_MacchinaA \
   --nome-pezzo ComponenteXYZ \
-  --db-host 192.168.1.100 \
+  --db-host 172.20.1.84 \
   --db-name raspberry_counter \
-  --db-user contatore \
-  --db-password password_sicura
+  --db-user counter \
+  --db-password CatisPg2026
 
 # Raspberry Pi #2
 sudo ./deploy.sh \
   --nome-macchinario Linea1_MacchinaB \
   --nome-pezzo ComponenteXYZ \
-  --db-host 192.168.1.100 \
+  --db-host 172.20.1.84 \
   --db-name raspberry_counter \
-  --db-user contatore \
-  --db-password password_sicura
+  --db-user counter \
+  --db-password CatisPg2026
 ```
 
 | Raspberry | NOME_MACCHINARIO | NOME_PEZZO | Resto config |
@@ -565,7 +591,10 @@ Cause comuni:
 
 ```bash
 # Dal Raspberry, test connessione
-psql -h 192.168.1.100 -U contatore -d raspberry_counter
+psql -h 172.20.1.84 -U counter -d raspberry_counter
+
+# Oppure
+cd /opt/monitoring_Log/DB && ./test-db.sh
 ```
 
 Verificare che PostgreSQL accetti connessioni di rete (`pg_hba.conf` con `0.0.0.0/0` e `listen_addresses = '*'` in `postgresql.conf`).
@@ -594,10 +623,9 @@ Cause frequenti e fix:
 Poi rilancia lo script aggiornato:
 
 ```bash
-sudo DB_PASSWORD='tua_password' ./setup-rocky.sh
+cd /opt/monitoring_Log/UNIX_log_aggregator/sql
+sudo ./setup-postgres.sh
 ```
-
-Lo script ora valida la config prima dell'avvio e stampa automaticamente i log se fallisce.
 
 ### Conteggi doppi o mancanti
 
@@ -609,10 +637,10 @@ Lo script ora valida la config prima dell'avvio e stampa automaticamente i log s
 Su Raspberry Pi OS recente, aggiungere l'utente al gruppo `gpio`:
 
 ```bash
-sudo usermod -aG gpio pi
+sudo usermod -aG gpio koman
 ```
 
-Riavviare il servizio dopo la modifica.
+Riavviare il servizio dopo la modifica. L'utente del servizio deve avere una home directory scrivibile (richiesto da `lgpio`).
 
 ### Aggiornamento dello script
 

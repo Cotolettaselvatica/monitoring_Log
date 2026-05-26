@@ -2,6 +2,23 @@
 
 Servizio **Rocky Linux** (Python) che legge i log di produzione dalle **macchine Windows via SMB**, importa ogni riga come un pezzo contato e li salva su **PostgreSQL** (stesso database dei Raspberry).
 
+### Repository Git
+
+```bash
+git clone https://github.com/Cotolettaselvatica/monitoring_Log.git
+cd monitoring_Log/WIN_log_aggregator
+```
+
+Struttura del repository:
+
+```
+monitoring_Log/
+├── DB/
+│   └── test-db.sh
+├── UNIX_log_aggregator/        # Contatore pezzi Raspberry Pi → PostgreSQL
+└── WIN_log_aggregator/         # Questo progetto (log SMB → PostgreSQL)
+```
+
 ---
 
 ## Architettura
@@ -22,7 +39,7 @@ Macchina Windows 1                    Macchina Windows N
 2. L'aggregator gira in loop sul **server Rocky Linux** (default ogni 30 secondi).
 3. Per ogni macchina legge solo le **righe nuove** (tiene traccia dell'offset byte in `state/offsets.json`).
 4. Ogni riga valida viene inserita in PostgreSQL nella tabella `conteggi_pezzi`.
-5. `ON CONFLICT DO NOTHING` evita duplicati se una riga viene riletta.
+5. Gli offset in `state/offsets.json` evitano di rileggere righe gia' importate.
 
 ---
 
@@ -66,23 +83,18 @@ Righe vuote e righe che iniziano con `#` vengono ignorate.
 
 Usa lo stesso server/database dei Raspberry (`raspberry_counter` su `172.20.1.84`).
 
-### Estensione tabella
+### Schema tabella
 
-```bash
-sudo -u postgres psql -d raspberry_counter -f sql/schema.sql
-```
-
-Lo script aggiunge le colonne `source_id`, `raw_line`, `imported_at` alla tabella esistente `conteggi_pezzi`.
-
-### Schema (colonne aggiuntive WIN)
+Usa la stessa tabella `conteggi_pezzi` dei Raspberry (definita in `UNIX_log_aggregator/sql/schema.sql`):
 
 | Colonna | Descrizione |
 |---------|-------------|
-| `source_id` | ID sorgente da `machines.yaml` |
-| `raw_line` | Riga originale del log |
-| `imported_at` | Quando e' stata importata |
+| `id` | Chiave primaria |
+| `nome_macchinario` | Nome macchina |
+| `nome_pezzo` | Tipo pezzo |
+| `timestamp` | Data/ora del conteggio |
 
-Le colonne `id`, `nome_macchinario`, `nome_pezzo`, `timestamp` sono condivise con i conteggi GPIO dei Raspberry.
+La deduplica delle righe importate e' gestita dagli **offset byte** in `state/offsets.json`, non dal database.
 
 ### Utente
 
@@ -183,13 +195,12 @@ Per aggiungere un macchinario: aggiungi una voce in `machines.yaml`. Non serve r
 ### Setup
 
 ```bash
-cd WIN_log_aggregator
-Il servizio **`win-log-aggregator.service`** parte automaticamente al boot dopo il deploy:
-
-```bash
+cd /opt/monitoring_Log/WIN_log_aggregator
 chmod +x deploy_win_aggregator.sh run.sh
 sudo ./deploy_win_aggregator.sh
 ```
+
+Il servizio **`win-log-aggregator.service`** parte automaticamente al boot dopo il deploy.
 
 Verifica avvio automatico:
 
@@ -199,7 +210,6 @@ sudo systemctl status win-log-aggregator.service
 ```
 
 Su container LXC senza systemd, il deploy usa **cron @reboot** come fallback.
-```
 
 Poi modifica:
 1. `/etc/win-log-aggregator.env` — credenziali PostgreSQL
@@ -208,7 +218,7 @@ Poi modifica:
 Esegui lo schema SQL su PostgreSQL (se non già fatto):
 
 ```bash
-sudo -u postgres psql -d raspberry_counter -f sql/schema.sql
+sudo -u postgres psql -d raspberry_counter -f /opt/monitoring_Log/WIN_log_aggregator/sql/schema.sql
 ```
 
 ### Avvio
@@ -268,25 +278,29 @@ smbclient //IP_WINDOWS/logs -U utente_windows
 ## Struttura progetto
 
 ```
-WIN_log_aggregator/
-├── aggregator/
-│   ├── config.py       # .env + machines.yaml
-│   ├── parser.py       # Parsing righe log + offset
-│   ├── smb_reader.py   # Lettura file via SMB
-│   ├── db.py           # Insert su PostgreSQL
-│   └── main.py         # Loop principale
-├── config/
-│   └── machines.example.yaml
-├── sql/
-│   └── schema.sql
-├── state/              # Offset lettura (generato a runtime)
-├── .env.example
-├── requirements.txt
-├── systemd/
-│   └── win-log-aggregator.service
-├── deploy_win_aggregator.sh
-├── run.sh
-└── README.md
+monitoring_Log/
+├── DB/
+│   └── test-db.sh
+├── UNIX_log_aggregator/
+└── WIN_log_aggregator/
+    ├── aggregator/
+    │   ├── config.py       # .env + machines.yaml
+    │   ├── parser.py       # Parsing righe log + offset
+    │   ├── smb_reader.py   # Lettura file via SMB
+    │   ├── db.py           # Insert su PostgreSQL
+    │   └── main.py         # Loop principale
+    ├── config/
+    │   └── machines.example.yaml
+    ├── sql/
+    │   └── schema.sql
+    ├── state/              # Offset lettura (generato a runtime)
+    ├── .env.example
+    ├── requirements.txt
+    ├── systemd/
+    │   └── win-log-aggregator.service
+    ├── deploy_win_aggregator.sh
+    ├── run.sh
+    └── README.md
 ```
 
 ---
@@ -325,9 +339,10 @@ journalctl -u win-log-aggregator.service -f
 
 ## Flusso completo Industria 5.0
 
-| Componente | Ruolo |
-|------------|-------|
-| `UNIX_log_aggregator` (Raspberry) | Conta pezzi via GPIO → PostgreSQL |
-| Macchine Windows | Scrivono `pezzi.log` su share SMB |
-| `WIN_log_aggregator` (Rocky Linux) | Raccoglie log SMB → PostgreSQL |
-| PostgreSQL `raspberry_counter` | Database centralizzato unico |
+| Componente | Percorso | Ruolo |
+|------------|----------|-------|
+| PostgreSQL | `UNIX_log_aggregator/sql/setup-postgres.sh` | Database centralizzato `raspberry_counter` |
+| `UNIX_log_aggregator` | Raspberry Pi | Conta pezzi via GPIO → PostgreSQL |
+| Macchine Windows | share SMB | Scrivono `pezzi.log` |
+| `WIN_log_aggregator` | Rocky Linux | Raccoglie log SMB → PostgreSQL |
+| `DB/test-db.sh` | qualsiasi host | Verifica connessione PostgreSQL |

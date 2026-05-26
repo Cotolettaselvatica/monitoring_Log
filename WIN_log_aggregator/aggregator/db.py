@@ -42,18 +42,14 @@ class PieceRepository:
 
     def insert_piece(self, piece: ParsedPiece, source_id: str) -> bool:
         query = """
-            INSERT INTO conteggi_pezzi
-                (nome_macchinario, nome_pezzo, timestamp, source_id, raw_line)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (source_id, raw_line) DO NOTHING
+            INSERT INTO conteggi_pezzi (nome_macchinario, nome_pezzo, timestamp)
+            VALUES (%s, %s, %s)
             RETURNING id
         """
         params = (
             piece.nome_macchinario,
             piece.nome_pezzo,
             piece.timestamp,
-            source_id,
-            piece.raw_line,
         )
 
         try:
