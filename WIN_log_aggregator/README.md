@@ -220,12 +220,6 @@ python3 -m venv .venv
 
 ---
 
-## Installazione su Windows (opzionale)
-
-Per test locali puoi usare ancora `install.bat` e `run.bat`, ma in produzione l'aggregator va installato su **Rocky Linux**.
-
----
-
 ## Integrazione con le macchine Windows
 
 Ogni macchina Windows in produzione deve:
@@ -279,8 +273,6 @@ WIN_log_aggregator/
 │   └── win-log-aggregator.service
 ├── install.sh
 ├── run.sh
-├── install.bat          # opzionale, solo test su Windows
-├── run.bat
 └── README.md
 ```
 
