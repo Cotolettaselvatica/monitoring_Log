@@ -29,6 +29,21 @@ install_packages() {
     dnf install -y python3 python3-pip
 }
 
+install_start_script() {
+    local start_script="${INSTALL_DIR}/start-aggregator.sh"
+
+    cat >"$start_script" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd ${INSTALL_DIR}
+export AGGREGATOR_ENV=${ENV_FILE}
+export AGGREGATOR_BASE_DIR=${INSTALL_DIR}
+exec ${INSTALL_DIR}/.venv/bin/python -m aggregator.main
+EOF
+    chmod 755 "$start_script"
+    chown root:root "$start_script"
+}
+
 install_application() {
     log "Installo applicazione in ${INSTALL_DIR}..."
 
@@ -49,7 +64,9 @@ install_application() {
     "${INSTALL_DIR}/.venv/bin/pip" install --upgrade pip
     "${INSTALL_DIR}/.venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt"
 
+    install_start_script
     chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}"
+    chown root:root "${INSTALL_DIR}/start-aggregator.sh"
 }
 
 write_env_file() {
@@ -76,10 +93,54 @@ EOF
     chown "${SERVICE_USER}:${SERVICE_USER}" "$ENV_FILE"
 }
 
+systemd_usable() {
+    if ! command -v systemctl >/dev/null 2>&1; then
+        return 1
+    fi
+    if ! pidof systemd >/dev/null 2>&1 && [[ ! -d /run/systemd/system ]]; then
+        return 1
+    fi
+    systemctl list-unit-files --type=service --no-legend >/dev/null 2>&1
+}
+
+start_aggregator_now() {
+    log "Avvio aggregator..."
+    if pgrep -f "${INSTALL_DIR}/.venv/bin/python -m aggregator.main" >/dev/null 2>&1; then
+        log "Aggregator gia' in esecuzione"
+        return 0
+    fi
+    sudo -u "$SERVICE_USER" -H nohup "$INSTALL_DIR/start-aggregator.sh" \
+        >>"${INSTALL_DIR}/aggregator.log" 2>&1 &
+    sleep 2
+    pgrep -f "${INSTALL_DIR}/.venv/bin/python -m aggregator.main" >/dev/null 2>&1 \
+        || die "Aggregator non avviato. Vedi ${INSTALL_DIR}/aggregator.log"
+    log "Aggregator avviato (nohup)"
+}
+
+install_cron_autostart() {
+    local cron_file="/etc/cron.d/win-log-aggregator"
+
+    log "Configuro avvio automatico al boot via cron..."
+    cat >"$cron_file" <<EOF
+SHELL=/bin/bash
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+@reboot root sleep 15 && su -s /bin/bash ${SERVICE_USER} -c '${INSTALL_DIR}/start-aggregator.sh >> ${INSTALL_DIR}/aggregator.log 2>&1 &'
+EOF
+    chmod 644 "$cron_file"
+    log "Avvio automatico al boot: abilitato (cron @reboot)"
+}
+
 install_systemd_service() {
     local service_path="/etc/systemd/system/${SERVICE_NAME}"
 
-    log "Creo servizio systemd ${SERVICE_NAME}..."
+    if ! systemd_usable; then
+        log "systemd non disponibile (tipico container LXC)"
+        install_cron_autostart
+        start_aggregator_now
+        return
+    fi
+
+    log "Installo servizio systemd ${SERVICE_NAME}..."
     cat >"$service_path" <<EOF
 [Unit]
 Description=Aggregatore log macchine Windows via SMB -> PostgreSQL
@@ -92,9 +153,10 @@ User=${SERVICE_USER}
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${ENV_FILE}
 Environment=AGGREGATOR_ENV=${ENV_FILE}
-ExecStart=${INSTALL_DIR}/.venv/bin/python -m aggregator.main
+ExecStart=${INSTALL_DIR}/start-aggregator.sh
 Restart=always
 RestartSec=10
+TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target
@@ -105,13 +167,20 @@ EOF
     systemctl enable "$SERVICE_NAME"
     systemctl restart "$SERVICE_NAME"
 
+    if ! systemctl is-enabled --quiet "$SERVICE_NAME"; then
+        die "Avvio automatico al boot non abilitato per ${SERVICE_NAME}"
+    fi
+    log "Avvio automatico al boot: abilitato (systemd)"
+
     sleep 2
     if systemctl is-active --quiet "$SERVICE_NAME"; then
         log "Servizio ${SERVICE_NAME} attivo"
-    else
-        systemctl status "$SERVICE_NAME" --no-pager -l || true
-        die "Servizio non avviato. Controlla: journalctl -u ${SERVICE_NAME} -n 50"
+        return
     fi
+
+    log "systemd non ha avviato il servizio, uso fallback cron..."
+    install_cron_autostart
+    start_aggregator_now
 }
 
 show_summary() {
@@ -123,9 +192,11 @@ Directory  : ${INSTALL_DIR}
 Config DB  : ${ENV_FILE}
 Macchine   : ${INSTALL_DIR}/config/machines.yaml
 Servizio   : ${SERVICE_NAME}
+Avvio boot : systemd (o cron @reboot su container LXC)
 
 Comandi:
   sudo systemctl status ${SERVICE_NAME}
+  sudo systemctl is-enabled ${SERVICE_NAME}
   journalctl -u ${SERVICE_NAME} -f
   sudo nano ${ENV_FILE}
   sudo nano ${INSTALL_DIR}/config/machines.yaml

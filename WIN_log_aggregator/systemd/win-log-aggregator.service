@@ -9,9 +9,10 @@ User=logagg
 WorkingDirectory=/opt/win-log-aggregator
 EnvironmentFile=/etc/win-log-aggregator.env
 Environment=AGGREGATOR_ENV=/etc/win-log-aggregator.env
-ExecStart=/opt/win-log-aggregator/.venv/bin/python -m aggregator.main
+ExecStart=/opt/win-log-aggregator/start-aggregator.sh
 Restart=always
 RestartSec=10
+TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target

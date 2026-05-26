@@ -184,8 +184,21 @@ Per aggiungere un macchinario: aggiungi una voce in `machines.yaml`. Non serve r
 
 ```bash
 cd WIN_log_aggregator
+Il servizio **`win-log-aggregator.service`** parte automaticamente al boot dopo il deploy:
+
+```bash
 chmod +x deploy_win_aggregator.sh run.sh
 sudo ./deploy_win_aggregator.sh
+```
+
+Verifica avvio automatico:
+
+```bash
+sudo systemctl is-enabled win-log-aggregator.service
+sudo systemctl status win-log-aggregator.service
+```
+
+Su container LXC senza systemd, il deploy usa **cron @reboot** come fallback.
 ```
 
 Poi modifica:
