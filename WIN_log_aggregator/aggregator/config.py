@@ -89,7 +89,7 @@ def load_settings(
     return AggregatorSettings(
         db=DbSettings(
             host=os.getenv("DB_HOST", "localhost"),
-            port=int(os.getenv("DB_PORT", "3306")),
+            port=int(os.getenv("DB_PORT", "5432")),
             name=_require("DB_NAME"),
             user=_require("DB_USER"),
             password=_require("DB_PASSWORD"),

@@ -1,6 +1,6 @@
 # WIN Log Aggregator
 
-Servizio Windows (Python) che legge i log di produzione da **N macchinari via SMB**, importa ogni riga come un pezzo contato e li salva su **MariaDB**.
+Servizio Windows (Python) che legge i log di produzione da **N macchinari via SMB**, importa ogni riga come un pezzo contato e li salva su **PostgreSQL** (stesso database dei Raspberry).
 
 ---
 
@@ -16,14 +16,14 @@ Macchinario 1 (Raspberry/PC)          Macchinario N
                          |
               PC Windows (questo aggregator)
                          |
-                    MariaDB
+                    PostgreSQL (raspberry_counter)
 ```
 
 1. Ogni macchinario scrive **una riga per pezzo** in un file di log esposto in una cartella SMB.
 2. L'aggregator gira in loop sul PC Windows (default ogni 30 secondi).
 3. Per ogni macchina legge solo le **righe nuove** (tiene traccia dell'offset byte in `state/offsets.json`).
-4. Ogni riga valida viene inserita in MariaDB nella tabella `conteggi_pezzi`.
-5. `INSERT IGNORE` evita duplicati se una riga viene riletta.
+4. Ogni riga valida viene inserita in PostgreSQL nella tabella `conteggi_pezzi`.
+5. `ON CONFLICT DO NOTHING` evita duplicati se una riga viene riletta.
 
 ---
 
@@ -63,33 +63,31 @@ Righe vuote e righe che iniziano con `#` vengono ignorate.
 
 ---
 
-## Database MariaDB
+## Database PostgreSQL
 
-### Creazione tabella
+Usa lo stesso server/database dei Raspberry (`raspberry_counter` su `172.20.1.84`).
+
+### Estensione tabella
 
 ```bash
-mysql -u root -p industria < sql/schema.sql
+sudo -u postgres psql -d raspberry_counter -f sql/schema.sql
 ```
 
-### Schema
+Lo script aggiunge le colonne `source_id`, `raw_line`, `imported_at` alla tabella esistente `conteggi_pezzi`.
+
+### Schema (colonne aggiuntive WIN)
 
 | Colonna | Descrizione |
 |---------|-------------|
-| `id` | Chiave auto-increment |
-| `nome_macchinario` | Nome macchina |
-| `nome_pezzo` | Tipo pezzo |
-| `timestamp` | Data/ora del conteggio |
 | `source_id` | ID sorgente da `machines.yaml` |
 | `raw_line` | Riga originale del log |
 | `imported_at` | Quando e' stata importata |
 
-### Utente consigliato
+Le colonne `id`, `nome_macchinario`, `nome_pezzo`, `timestamp` sono condivise con i conteggi GPIO dei Raspberry.
 
-```sql
-CREATE USER 'aggregator'@'%' IDENTIFIED BY 'password_sicura';
-GRANT SELECT, INSERT ON industria.conteggi_pezzi TO 'aggregator'@'%';
-FLUSH PRIVILEGES;
-```
+### Utente
+
+Usa lo stesso utente `counter` creato da `UNIX_log_aggregator/sql/setup-postgres.sh`.
 
 ### Query utili
 
@@ -106,16 +104,16 @@ GROUP BY nome_macchinario;
 
 ## Configurazione
 
-### 1. File `.env` (MariaDB e parametri globali)
+### 1. File `.env` (PostgreSQL e parametri globali)
 
 Copia `.env.example` in `.env`:
 
 ```bash
-DB_HOST=192.168.1.100
-DB_PORT=3306
-DB_NAME=industria
-DB_USER=aggregator
-DB_PASSWORD=password_sicura
+DB_HOST=172.20.1.84
+DB_PORT=5432
+DB_NAME=raspberry_counter
+DB_USER=counter
+DB_PASSWORD=CatisPg2026
 
 MACHINES_CONFIG=config/machines.yaml
 STATE_FILE=state/offsets.json
@@ -124,11 +122,11 @@ POLL_INTERVAL_SEC=30
 
 | Variabile | Default | Descrizione |
 |-----------|---------|-------------|
-| `DB_HOST` | `localhost` | Server MariaDB |
-| `DB_PORT` | `3306` | Porta MariaDB |
+| `DB_HOST` | `localhost` | Server PostgreSQL |
+| `DB_PORT` | `5432` | Porta PostgreSQL |
 | `DB_NAME` | — | Nome database |
-| `DB_USER` | — | Utente MariaDB |
-| `DB_PASSWORD` | — | Password MariaDB |
+| `DB_USER` | — | Utente PostgreSQL |
+| `DB_PASSWORD` | — | Password PostgreSQL |
 | `MACHINES_CONFIG` | `config/machines.yaml` | Elenco macchinari SMB |
 | `STATE_FILE` | `state/offsets.json` | Offset lettura per sorgente |
 | `POLL_INTERVAL_SEC` | `30` | Intervallo polling in secondi |
@@ -181,7 +179,7 @@ Per aggiungere un macchinario: aggiungi una voce in `machines.yaml`. Non serve r
 - Windows 10/11 o Windows Server
 - Python 3.11+
 - Accesso di rete alle share SMB dei macchinari
-- MariaDB raggiungibile in LAN
+- PostgreSQL raggiungibile in LAN (porta 5432)
 
 ### Setup
 
@@ -190,13 +188,13 @@ install.bat
 ```
 
 Poi modifica:
-1. `.env` — credenziali MariaDB
+1. `.env` — credenziali PostgreSQL
 2. `config/machines.yaml` — elenco macchinari e share SMB
 
-Esegui lo schema SQL su MariaDB:
+Esegui lo schema SQL su PostgreSQL:
 
 ```cmd
-mysql -u root -p industria < sql\schema.sql
+psql -h 172.20.1.84 -U counter -d raspberry_counter -f sql\schema.sql
 ```
 
 ### Avvio
@@ -264,7 +262,7 @@ WIN_log_aggregator/
 │   ├── config.py       # .env + machines.yaml
 │   ├── parser.py       # Parsing righe log + offset
 │   ├── smb_reader.py   # Lettura file via SMB
-│   ├── db.py           # Insert su MariaDB
+│   ├── db.py           # Insert su PostgreSQL
 │   └── main.py         # Loop principale
 ├── config/
 │   └── machines.example.yaml
@@ -288,13 +286,13 @@ WIN_log_aggregator/
 - Da Windows prova: `\\192.168.1.10\logs` in Esplora risorse
 - Controlla firewall e che Samba sia attivo sul macchinario
 
-### Errore connessione MariaDB
+### Errore connessione PostgreSQL
 
 ```cmd
-mysql -h 192.168.1.100 -u aggregator -p industria
+psql -h 172.20.1.84 -U counter -d raspberry_counter
 ```
 
-Verifica che MariaDB accetti connessioni remote (`bind-address` in `my.cnf`).
+Verifica che PostgreSQL accetti connessioni di rete (`pg_hba.conf` e `listen_addresses`).
 
 ### Righe non importate
 
@@ -316,9 +314,7 @@ run.bat >> logs\aggregator.log 2>&1
 
 | Componente | Ruolo |
 |------------|-------|
-| `UNIX_log_aggregator` (Raspberry) | Conta pezzi via GPIO, scrive log o DB |
+| `UNIX_log_aggregator` (Raspberry) | Conta pezzi via GPIO → PostgreSQL |
 | Share SMB su ogni macchinario | Espone `pezzi.log` in rete |
-| `WIN_log_aggregator` (questo) | Raccoglie i log SMB → MariaDB |
-| MariaDB | Database centralizzato su Windows/server |
-
-Se i Raspberry scrivono direttamente su PostgreSQL **e** su file di log, MariaDB diventa il database centralizzato per reporting/analisi Windows.
+| `WIN_log_aggregator` (questo) | Raccoglie i log SMB → PostgreSQL |
+| PostgreSQL `raspberry_counter` | Database centralizzato unico |

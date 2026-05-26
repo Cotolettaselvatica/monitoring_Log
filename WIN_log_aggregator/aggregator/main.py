@@ -73,7 +73,7 @@ def main() -> int:
     try:
         repository.connect()
     except Exception:
-        logger.exception("Connessione iniziale a MariaDB fallita")
+        logger.exception("Connessione iniziale a PostgreSQL fallita")
         return 1
 
     logger.info(
@@ -86,7 +86,7 @@ def main() -> int:
         while running:
             imported = process_all_sources(settings, repository, offsets)
             if imported:
-                logger.info("Importate %s righe in MariaDB", imported)
+                logger.info("Importate %s righe in PostgreSQL", imported)
             time.sleep(settings.poll_interval_sec)
     finally:
         repository.close()

@@ -26,16 +26,16 @@ if not exist "config\machines.yaml" (
 
 if not exist ".env" (
     copy .env.example .env
-    echo Creato .env - inserisci credenziali MariaDB.
+    echo Creato .env - inserisci credenziali PostgreSQL.
 )
 
 if not exist "state" mkdir state
 
 echo.
 echo Installazione completata.
-echo 1. Modifica .env con credenziali MariaDB
+echo 1. Modifica .env con credenziali PostgreSQL
 echo 2. Modifica config\machines.yaml con le share SMB
-echo 3. Esegui sql\schema.sql su MariaDB
+echo 3. Esegui sql\schema.sql su PostgreSQL (estende tabella conteggi_pezzi)
 echo 4. Avvia con run.bat
 echo.
 pause
