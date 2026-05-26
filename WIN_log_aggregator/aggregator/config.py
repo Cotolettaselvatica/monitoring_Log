@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import List, Optional
 
 import yaml
 from dotenv import load_dotenv
@@ -31,7 +34,7 @@ class MachineSource:
 @dataclass(frozen=True)
 class AggregatorSettings:
     db: DbSettings
-    machines: list[MachineSource]
+    machines: List[MachineSource]
     poll_interval_sec: int
     state_file: Path
     machines_config: Path
@@ -44,7 +47,7 @@ def _require(name: str) -> str:
     return value
 
 
-def _load_machines(config_path: Path) -> list[MachineSource]:
+def _load_machines(config_path: Path) -> List[MachineSource]:
     with config_path.open(encoding="utf-8") as handle:
         raw = yaml.safe_load(handle)
 
@@ -52,7 +55,7 @@ def _load_machines(config_path: Path) -> list[MachineSource]:
     if not machines:
         raise ValueError(f"Nessuna macchina definita in {config_path}")
 
-    result: list[MachineSource] = []
+    result: List[MachineSource] = []
     for item in machines:
         result.append(
             MachineSource(
@@ -71,8 +74,8 @@ def _load_machines(config_path: Path) -> list[MachineSource]:
 
 
 def load_settings(
-    env_file: str | None = None,
-    machines_file: str | None = None,
+    env_file: Optional[str] = None,
+    machines_file: Optional[str] = None,
 ) -> AggregatorSettings:
     if env_file:
         load_dotenv(env_file)

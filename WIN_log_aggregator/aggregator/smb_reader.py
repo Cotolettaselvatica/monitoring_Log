@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import logging
+from typing import List, Tuple
 
 import smbclient
 
@@ -24,7 +27,7 @@ def _register_session(source: MachineSource) -> None:
     smbclient.register_session(source.smb_host, **kwargs)
 
 
-def read_new_lines(source: MachineSource, start_offset: int) -> tuple[list[ParsedPiece], int]:
+def read_new_lines(source: MachineSource, start_offset: int) -> Tuple[List[ParsedPiece], int]:
     unc_path = _smb_unc(source)
     _register_session(source)
 
@@ -37,7 +40,7 @@ def read_new_lines(source: MachineSource, start_offset: int) -> tuple[list[Parse
         return [], new_offset
 
     text = raw.decode("utf-8", errors="replace")
-    pieces: list[ParsedPiece] = []
+    pieces: List[ParsedPiece] = []
 
     for line in text.splitlines():
         parsed = parse_log_line(

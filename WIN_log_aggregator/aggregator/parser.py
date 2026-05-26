@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import json
 import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +34,7 @@ def parse_log_line(
     line: str,
     default_macchinario: str,
     default_pezzo: str,
-) -> ParsedPiece | None:
+) -> Optional[ParsedPiece]:
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
         return None
@@ -70,7 +73,7 @@ def parse_log_line(
 class OffsetStore:
     def __init__(self, path: Path) -> None:
         self._path = path
-        self._offsets: dict[str, int] = {}
+        self._offsets: Dict[str, int] = {}
         self._load()
 
     def _load(self) -> None:
