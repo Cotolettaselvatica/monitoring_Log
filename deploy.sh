@@ -248,6 +248,20 @@ install_application() {
     chown -R "${SERVICE_USER}:${SERVICE_USER}" "$INSTALL_DIR"
 }
 
+ensure_service_user_home() {
+    local home_dir
+    home_dir="$(getent passwd "$SERVICE_USER" | cut -d: -f6)"
+    [[ -n "$home_dir" ]] || die "Utente servizio inesistente: ${SERVICE_USER}"
+
+    if [[ ! -d "$home_dir" ]]; then
+        log "Creo home directory ${home_dir} per ${SERVICE_USER}"
+        mkdir -p "$home_dir"
+    fi
+
+    chown "${SERVICE_USER}:${SERVICE_USER}" "$home_dir"
+    chmod 700 "$home_dir"
+}
+
 install_systemd_service() {
     local service_path="/etc/systemd/system/${SERVICE_NAME}"
 
@@ -256,6 +270,7 @@ install_systemd_service() {
     fi
 
     log "Configuro permessi GPIO per l'utente ${SERVICE_USER}"
+    ensure_service_user_home
     if getent group gpio >/dev/null 2>&1; then
         usermod -aG gpio "$SERVICE_USER" || true
     else
