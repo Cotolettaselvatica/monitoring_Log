@@ -8,7 +8,7 @@ ENV_FILE="${AGGREGATOR_ENV:-${SCRIPT_DIR}/.env}"
 cd "$SCRIPT_DIR"
 
 if [[ ! -d ".venv" ]]; then
-    echo "Virtualenv non trovato. Esegui prima: ./install.sh" >&2
+    echo "Virtualenv non trovato. Esegui prima: sudo ./deploy_win_aggregator.sh" >&2
     exit 1
 fi
 

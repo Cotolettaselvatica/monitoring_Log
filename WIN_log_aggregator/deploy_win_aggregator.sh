@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Installa WIN_log_aggregator su Rocky Linux
-# Uso: sudo ./install.sh
+# Deploy WIN_log_aggregator su Rocky Linux
+# Uso: sudo ./deploy_win_aggregator.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,11 +9,11 @@ ENV_FILE="/etc/win-log-aggregator.env"
 SERVICE_NAME="win-log-aggregator.service"
 SERVICE_USER="${SERVICE_USER:-logagg}"
 
-log() { printf '[install] %s\n' "$*"; }
-die() { printf '[install] ERRORE: %s\n' "$*" >&2; exit 1; }
+log() { printf '[deploy] %s\n' "$*"; }
+die() { printf '[deploy] ERRORE: %s\n' "$*" >&2; exit 1; }
 
 require_root() {
-    [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Esegui con sudo: sudo ./install.sh"
+    [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Esegui con sudo: sudo ./deploy_win_aggregator.sh"
 }
 
 ensure_service_user() {
@@ -60,7 +60,7 @@ write_env_file() {
 
     log "Scrivo ${ENV_FILE} da .env.example..."
     cat >"$ENV_FILE" <<EOF
-# Generato da install.sh il $(date -Iseconds)
+# Generato da deploy_win_aggregator.sh il $(date -Iseconds)
 DB_HOST=172.20.1.84
 DB_PORT=5432
 DB_NAME=raspberry_counter
@@ -117,7 +117,7 @@ EOF
 show_summary() {
     cat <<EOF
 
-Installazione completata.
+Deploy completato.
 
 Directory  : ${INSTALL_DIR}
 Config DB  : ${ENV_FILE}

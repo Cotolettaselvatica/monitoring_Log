@@ -184,8 +184,8 @@ Per aggiungere un macchinario: aggiungi una voce in `machines.yaml`. Non serve r
 
 ```bash
 cd WIN_log_aggregator
-chmod +x install.sh run.sh
-sudo ./install.sh
+chmod +x deploy_win_aggregator.sh run.sh
+sudo ./deploy_win_aggregator.sh
 ```
 
 Poi modifica:
@@ -200,7 +200,7 @@ sudo -u postgres psql -d raspberry_counter -f sql/schema.sql
 
 ### Avvio
 
-Il servizio parte automaticamente con `install.sh`. Comandi utili:
+Il servizio parte automaticamente con `deploy_win_aggregator.sh`. Comandi utili:
 
 ```bash
 sudo systemctl status win-log-aggregator.service
@@ -271,7 +271,7 @@ WIN_log_aggregator/
 ├── requirements.txt
 ├── systemd/
 │   └── win-log-aggregator.service
-├── install.sh
+├── deploy_win_aggregator.sh
 ├── run.sh
 └── README.md
 ```
