@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Test connessione PostgreSQL (Raspberry Pi, server o locale Docker).
+# Test connessione PostgreSQL (Raspberry Pi, server o Postgres locale).
 # Uso: ./test-db.sh
-#      LOCAL=1 ./test-db.sh                    # localhost Docker
+#      LOCAL=1 ./test-db.sh                    # localhost (Postgres.app)
 #      DB_HOST=172.20.1.84 ./test-db.sh        # server produzione
 set -euo pipefail
 
