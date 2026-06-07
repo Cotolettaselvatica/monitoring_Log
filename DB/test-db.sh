@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# Test connessione PostgreSQL (Raspberry Pi o server).
+# Test connessione PostgreSQL (Raspberry Pi, server o locale Docker).
 # Uso: ./test-db.sh
-#      DB_HOST=172.20.1.84 DB_PASSWORD=CatisPg2026 ./test-db.sh
+#      LOCAL=1 ./test-db.sh                    # localhost Docker
+#      DB_HOST=172.20.1.84 ./test-db.sh        # server produzione
 set -euo pipefail
 
-DB_HOST="${DB_HOST:-172.20.1.84}"
+if [[ "${LOCAL:-0}" == "1" ]]; then
+  DB_HOST="${DB_HOST:-127.0.0.1}"
+else
+  DB_HOST="${DB_HOST:-172.20.1.84}"
+fi
 DB_PORT="${DB_PORT:-5432}"
 DB_NAME="${DB_NAME:-raspberry_counter}"
 DB_USER="${DB_USER:-counter}"
