@@ -1,0 +1,8 @@
+#!/bin/sh
+# Rimuove trailer di attribuzione Cursor dal messaggio di commit
+case "$2" in
+  merge|squash) exit 0 ;;
+esac
+if [ -f "$1" ]; then
+  grep -v -E '^(Co-authored-by: Cursor|Made-with: Cursor)' "$1" > "$1.__strip" && mv "$1.__strip" "$1"
+fi

@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.DS_Store
+*.log
+.vite
+tsconfig.tsbuildinfo
+
+# Cursor (regole locali, piani, debug — non pubblicare su GitHub)
+.cursor/
+
+# Agent Skills vendor (Anthropic ufficiale — reinstall con npm run skills:install)
+.agents/skills/*
+!.agents/skills/cruscotto-catis/
