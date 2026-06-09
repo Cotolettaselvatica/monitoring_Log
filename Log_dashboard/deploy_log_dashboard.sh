@@ -136,15 +136,54 @@ ensure_nodejs() {
     log "Node.js $(node -v) pronto"
 }
 
+python_minor_version() {
+    "$1" -c 'import sys; print(sys.version_info.minor)'
+}
+
+resolve_python_bin() {
+    local candidate minor
+    for candidate in python3.11 python3.10 python3; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            minor="$(python_minor_version "$candidate")"
+            if [[ "$minor" -ge 10 ]]; then
+                PYTHON_BIN="$candidate"
+                return
+            fi
+        fi
+    done
+    PYTHON_BIN=""
+}
+
+ensure_python() {
+    resolve_python_bin
+    if [[ -n "${PYTHON_BIN:-}" ]]; then
+        log "Python OK: $("${PYTHON_BIN}" --version)"
+        return
+    fi
+
+    log "Python >= 3.10 richiesto (Rocky 9 ha python3.9 di default)..."
+    if command -v dnf >/dev/null 2>&1; then
+        dnf install -y python3.11 python3.11-pip
+        PYTHON_BIN=python3.11
+        return
+    fi
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get install -y python3.11 python3.11-venv
+        PYTHON_BIN=python3.11
+        return
+    fi
+    die "Python >= 3.10 richiesto. Installa python3.11 manualmente."
+}
+
 install_packages() {
     log "Installo pacchetti di sistema..."
     if command -v dnf >/dev/null 2>&1; then
-        dnf install -y python3 python3-pip nginx curl ca-certificates
+        dnf install -y python3 python3-pip python3.11 python3.11-pip nginx curl ca-certificates
         return
     fi
     if command -v apt-get >/dev/null 2>&1; then
         apt-get update -qq
-        apt-get install -y python3 python3-pip python3-venv nginx curl ca-certificates
+        apt-get install -y python3 python3-pip python3.11 python3.11-venv nginx curl ca-certificates
         return
     fi
     die "Gestore pacchetti non supportato (serve dnf o apt)"
@@ -163,9 +202,21 @@ install_backend() {
     cp -r "${backend_src}/sql" "${backend_dst}/"
     cp "${backend_src}/requirements.txt" "${backend_dst}/"
 
-    if [[ ! -d "${backend_dst}/.venv" ]]; then
-        log "Creo virtualenv Python..."
-        python3 -m venv "${backend_dst}/.venv"
+    ensure_python
+    local venv_minor=0
+    if [[ -x "${backend_dst}/.venv/bin/python" ]]; then
+        venv_minor="$("${backend_dst}/.venv/bin/python" -c 'import sys; print(sys.version_info.minor)')"
+    fi
+    local want_minor
+    want_minor="$(python_minor_version "${PYTHON_BIN}")"
+    if [[ ! -d "${backend_dst}/.venv" ]] || [[ "$venv_minor" -lt 10 ]]; then
+        if [[ -d "${backend_dst}/.venv" ]]; then
+            log "Ricreo virtualenv (Python 3.${venv_minor} -> 3.${want_minor})..."
+            rm -rf "${backend_dst}/.venv"
+        else
+            log "Creo virtualenv Python 3.${want_minor}..."
+        fi
+        "${PYTHON_BIN}" -m venv "${backend_dst}/.venv"
     fi
 
     "${backend_dst}/.venv/bin/pip" install --upgrade pip -q
@@ -396,6 +447,7 @@ main() {
     log_public_host
     ensure_service_user
     install_packages
+    ensure_python
     ensure_nodejs
     write_env_file
     install_backend

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -21,28 +20,28 @@ class Machine(BaseModel):
     code: str
     type: str
     location: str
-    department: str | None = None
-    line: str | None = None
+    department: Optional[str] = None
+    line: Optional[str] = None
     status: MachineStatus
     ipAddress: str
     lastSeen: str
     interconnected: bool
-    rdpUrl: str | None = None
-    imageUrl: str | None = None
+    rdpUrl: Optional[str] = None
+    imageUrl: Optional[str] = None
 
 
 class MachineInput(BaseModel):
     name: str
     code: str
     type: str
-    location: str | None = ""
+    location: Optional[str] = ""
     department: str
-    line: str | None = None
+    line: Optional[str] = None
     status: MachineStatus
     ipAddress: str
     interconnected: bool
-    rdpUrl: str | None = None
-    imageUrl: str | None = None
+    rdpUrl: Optional[str] = None
+    imageUrl: Optional[str] = None
 
 
 class MachineStatusPatch(BaseModel):
@@ -57,7 +56,7 @@ class LogEntry(BaseModel):
     level: LogLevel
     message: str
     user: str
-    durationMs: int | None = None
+    durationMs: Optional[int] = None
 
 
 class MachineNote(BaseModel):
@@ -79,16 +78,16 @@ class NewNoteInput(BaseModel):
 class Alert(BaseModel):
     id: str
     machineId: str
-    machineCode: str | None = None
-    machineName: str | None = None
+    machineCode: Optional[str] = None
+    machineName: Optional[str] = None
     ruleId: str
     ruleName: str
     severity: AlertSeverity
     status: AlertStatus
     message: str
     triggeredAt: str
-    acknowledgedAt: str | None = None
-    acknowledgedBy: str | None = None
+    acknowledgedAt: Optional[str] = None
+    acknowledgedBy: Optional[str] = None
 
 
 class AlertAckInput(BaseModel):
@@ -98,8 +97,8 @@ class AlertAckInput(BaseModel):
 class MaintenancePlan(BaseModel):
     id: str
     machineId: str
-    machineCode: str | None = None
-    machineName: str | None = None
+    machineCode: Optional[str] = None
+    machineName: Optional[str] = None
     type: NoteType
     scheduledAt: str
     dueAt: str
@@ -118,19 +117,19 @@ class NewMaintenanceInput(BaseModel):
 
 
 class MaintenancePatch(BaseModel):
-    type: NoteType | None = None
-    scheduledAt: str | None = None
-    dueAt: str | None = None
-    status: MaintenanceStatus | None = None
-    assignee: str | None = None
-    description: str | None = None
+    type: Optional[NoteType] = None
+    scheduledAt: Optional[str] = None
+    dueAt: Optional[str] = None
+    status: Optional[MaintenanceStatus] = None
+    assignee: Optional[str] = None
+    description: Optional[str] = None
 
 
 class ReliabilityMetricsBase(BaseModel):
     uptimePct: float
     downtimeMinutes: float
-    mtbfHours: float | None = None
-    mttrMinutes: float | None = None
+    mtbfHours: Optional[float] = None
+    mttrMinutes: Optional[float] = None
 
 
 class MachineMetrics(ReliabilityMetricsBase):
@@ -180,7 +179,7 @@ class AppSettings(BaseModel):
 class ReportTemplate(BaseModel):
     id: str
     name: str
-    description: str | None = None
+    description: Optional[str] = None
     filterSnapshot: dict = Field(default_factory=dict)
     pivotConfig: dict = Field(default_factory=dict)
     defaultFormat: Literal["csv", "excel", "json", "pdf"]
@@ -189,7 +188,7 @@ class ReportTemplate(BaseModel):
 
 class NewReportTemplateInput(BaseModel):
     name: str
-    description: str | None = None
+    description: Optional[str] = None
     filterSnapshot: dict = Field(default_factory=dict)
     pivotConfig: dict = Field(default_factory=dict)
     defaultFormat: Literal["csv", "excel", "json", "pdf"] = "csv"
@@ -198,7 +197,7 @@ class NewReportTemplateInput(BaseModel):
 class ReportSchedule(BaseModel):
     id: str
     templateId: str
-    templateName: str | None = None
+    templateName: Optional[str] = None
     cadence: ReportCadence
     recipients: str
     nextRun: str

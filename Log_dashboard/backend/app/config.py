@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import List
 
 from dotenv import load_dotenv
 import os
@@ -16,12 +17,12 @@ class Settings:
     db_password: str
     api_host: str
     api_port: int
-    cors_origins: list[str]
+    cors_origins: List[str]
     upload_dir: Path
     public_base_url: str
 
 
-def _split_origins(value: str) -> list[str]:
+def _split_origins(value: str) -> List[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
