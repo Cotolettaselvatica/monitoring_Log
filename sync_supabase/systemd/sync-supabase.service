@@ -1,0 +1,17 @@
+[Unit]
+Description=Sync PostgreSQL LAN verso Supabase (ridondanza)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/sync-supabase
+EnvironmentFile=/etc/sync-supabase.env
+Environment=PYTHONPATH=/opt/sync-supabase
+ExecStart=/opt/sync-supabase/.venv/bin/python -m sync_supabase
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
