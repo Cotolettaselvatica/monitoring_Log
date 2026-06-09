@@ -119,7 +119,16 @@ sudo ./deploy_log_dashboard.sh --skip-db-schema
 
 ### Requisito Node.js
 
-Il frontend (Vite 5) richiede **Node.js >= 18**. Lo script installa automaticamente Node 20 LTS via NodeSource se il server ha una versione più vecchia (es. Node 16 da `dnf`).
+Il frontend (Vite 5) richiede **Node.js >= 18**. Lo script installa automaticamente Node 20 LTS via NodeSource se il server ha una versione più vecchia (es. Node 16 da `dnf`), rimuovendo prima i pacchetti `nodejs`/`npm` di sistema che confliggono.
+
+Fix manuale su Rocky 9 se serve:
+
+```bash
+sudo dnf remove -y nodejs npm
+curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+sudo dnf install -y --allowerasing --disablerepo=nodesource-nsolid nodejs
+node -v
+```
 
 Se la build fallisce sul server, alternativa dal Mac:
 

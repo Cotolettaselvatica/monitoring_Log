@@ -81,12 +81,26 @@ node_major_version() {
     node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1
 }
 
+remove_distro_nodejs() {
+    local pkgs=()
+    rpm -q nodejs >/dev/null 2>&1 && pkgs+=(nodejs)
+    rpm -q npm >/dev/null 2>&1 && pkgs+=(npm)
+    rpm -q nodejs-full-i18n >/dev/null 2>&1 && pkgs+=(nodejs-full-i18n)
+    if [[ ${#pkgs[@]} -eq 0 ]]; then
+        return
+    fi
+    log "Rimuovo Node.js distro (conflitto con NodeSource): ${pkgs[*]}"
+    dnf remove -y "${pkgs[@]}" || true
+}
+
 install_nodejs_20() {
     log "Installo Node.js 20 LTS (Vite 5 richiede >= 18)..."
     if command -v dnf >/dev/null 2>&1; then
         dnf install -y curl ca-certificates
+        remove_distro_nodejs
         curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
-        dnf install -y nodejs
+        # --allowerasing: sostituisce nodejs 16 appstream; esclude repo nsolid (non serve)
+        dnf install -y --allowerasing --disablerepo=nodesource-nsolid nodejs
         return
     fi
     if command -v apt-get >/dev/null 2>&1; then
