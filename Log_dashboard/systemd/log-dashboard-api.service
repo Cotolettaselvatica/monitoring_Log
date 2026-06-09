@@ -1,0 +1,17 @@
+[Unit]
+Description=Log Dashboard API (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=logdash
+WorkingDirectory=/opt/log-dashboard/backend
+EnvironmentFile=/etc/log-dashboard.env
+Environment=PYTHONPATH=/opt/log-dashboard/backend
+ExecStart=/opt/log-dashboard/backend/start-api.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

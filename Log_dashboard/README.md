@@ -69,3 +69,50 @@ Soglia offline configurabile in **Impostazioni** (`offlineThresholdMin`, default
 ## Contratto API
 
 Il frontend si aspetta l'API documentata in `frontend/README.md`. Riferimento path: `frontend/src/services/endpoints.ts`.
+
+## Deploy produzione
+
+Script automatico per Rocky Linux (backend systemd + build frontend + nginx):
+
+```bash
+# 1. Copia il repo sul server dashboard (dal Mac)
+rsync -avz --exclude node_modules --exclude .venv --exclude dist \
+  Log_dashboard/ root@172.20.1.87:/opt/log-dashboard-src/
+
+# 2. Sul server 172.20.1.87
+cd /opt/log-dashboard-src
+chmod +x deploy_log_dashboard.sh
+sudo ./deploy_log_dashboard.sh
+```
+
+Server produzione dashboard: **172.20.1.87** — PostgreSQL: **172.20.1.84**
+
+Opzioni utili:
+
+| Opzione | Descrizione |
+|---------|-------------|
+| `--public-host IP` | URL frontend/API (default `172.20.1.87`) |
+| `--db-host IP` | PostgreSQL (default `172.20.1.84`) |
+| `--skip-db-schema` | Non riesegue `setup-dashboard.sh` |
+| `--skip-frontend` | Usa `frontend/dist/` già buildato |
+| `--skip-nginx` | Solo backend API |
+
+Dopo il deploy:
+
+- Frontend: `http://172.20.1.87`
+- API: `http://172.20.1.87:8000`
+- Health: `GET http://172.20.1.87:8000/health`
+
+Comandi:
+
+```bash
+sudo systemctl status log-dashboard-api
+journalctl -u log-dashboard-api -f
+sudo nano /etc/log-dashboard.env
+```
+
+Aggiornamento:
+
+```bash
+sudo ./deploy_log_dashboard.sh --skip-db-schema
+```
