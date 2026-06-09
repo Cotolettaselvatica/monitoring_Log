@@ -116,3 +116,17 @@ Aggiornamento:
 ```bash
 sudo ./deploy_log_dashboard.sh --skip-db-schema
 ```
+
+### Requisito Node.js
+
+Il frontend (Vite 5) richiede **Node.js >= 18**. Lo script installa automaticamente Node 20 LTS via NodeSource se il server ha una versione più vecchia (es. Node 16 da `dnf`).
+
+Se la build fallisce sul server, alternativa dal Mac:
+
+```bash
+cd Log_dashboard/frontend
+echo 'VITE_API_BASE_URL=http://172.20.1.87:8000' > .env.production.local
+npm run build
+rsync -avz dist/ root@172.20.1.87:/opt/log-dashboard/frontend/dist/
+ssh root@172.20.1.87 'cd /opt/log-dashboard-src && sudo ./deploy_log_dashboard.sh --skip-frontend --skip-db-schema'
+```

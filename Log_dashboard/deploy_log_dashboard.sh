@@ -77,21 +77,60 @@ ensure_service_user() {
     fi
 }
 
-install_packages() {
-    log "Installo pacchetti di sistema..."
+node_major_version() {
+    node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1
+}
+
+install_nodejs_20() {
+    log "Installo Node.js 20 LTS (Vite 5 richiede >= 18)..."
     if command -v dnf >/dev/null 2>&1; then
-        dnf install -y python3 python3-pip nginx
-        if [[ "$SKIP_FRONTEND" -eq 0 ]] && ! command -v npm >/dev/null 2>&1; then
-            dnf install -y nodejs npm || log "nodejs non installato via dnf; build frontend potrebbe fallire"
-        fi
+        dnf install -y curl ca-certificates
+        curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+        dnf install -y nodejs
         return
     fi
     if command -v apt-get >/dev/null 2>&1; then
         apt-get update -qq
-        apt-get install -y python3 python3-pip python3-venv nginx
-        if [[ "$SKIP_FRONTEND" -eq 0 ]] && ! command -v npm >/dev/null 2>&1; then
-            apt-get install -y nodejs npm || log "nodejs non installato via apt; build frontend potrebbe fallire"
-        fi
+        apt-get install -y curl ca-certificates
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt-get install -y nodejs
+        return
+    fi
+    die "Node.js >= 18 richiesto. Installa manualmente Node 20 o usa --skip-frontend con dist/ precompilato"
+}
+
+ensure_nodejs() {
+    if [[ "$SKIP_FRONTEND" -eq 1 ]]; then
+        return
+    fi
+
+    local major=0
+    if command -v node >/dev/null 2>&1; then
+        major="$(node_major_version)"
+    fi
+
+    if [[ "$major" -ge 18 ]]; then
+        log "Node.js $(node -v) OK (richiesto >= 18)"
+        return
+    fi
+
+    log "Node.js insufficiente per Vite 5 (attuale: $(node -v 2>/dev/null || echo assente))"
+    install_nodejs_20
+
+    major="$(node_major_version)"
+    [[ "$major" -ge 18 ]] || die "Node.js ancora insufficiente: $(node -v 2>/dev/null || echo assente)"
+    log "Node.js $(node -v) pronto"
+}
+
+install_packages() {
+    log "Installo pacchetti di sistema..."
+    if command -v dnf >/dev/null 2>&1; then
+        dnf install -y python3 python3-pip nginx curl ca-certificates
+        return
+    fi
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq
+        apt-get install -y python3 python3-pip python3-venv nginx curl ca-certificates
         return
     fi
     die "Gestore pacchetti non supportato (serve dnf o apt)"
@@ -343,6 +382,7 @@ main() {
     log_public_host
     ensure_service_user
     install_packages
+    ensure_nodejs
     write_env_file
     install_backend
     apply_db_schema
