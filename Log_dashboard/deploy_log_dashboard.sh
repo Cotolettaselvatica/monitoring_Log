@@ -11,6 +11,7 @@
 #   --db-password PASS   (default: CatisPg2026)
 #   --api-port PORT      (default: 8000)
 #   --nginx-port PORT    Porta frontend nginx (default: 80)
+#   --stop-httpd         Ferma e disabilita httpd/apache se occupa la porta 80
 #   --skip-db-schema     Non esegue setup-dashboard.sh
 #   --skip-frontend      Non builda il frontend (usa dist/ esistente)
 #   --skip-nginx         Non configura nginx
@@ -31,6 +32,7 @@ DB_USER="counter"
 DB_PASSWORD="CatisPg2026"
 API_PORT="8000"
 NGINX_PORT="80"
+STOP_HTTPD=0
 SKIP_DB_SCHEMA=0
 SKIP_FRONTEND=0
 SKIP_NGINX=0
@@ -54,6 +56,7 @@ parse_args() {
             --db-password) DB_PASSWORD="${2:-}"; shift 2 ;;
             --api-port) API_PORT="${2:-}"; shift 2 ;;
             --nginx-port) NGINX_PORT="${2:-}"; shift 2 ;;
+            --stop-httpd) STOP_HTTPD=1; shift ;;
             --skip-db-schema) SKIP_DB_SCHEMA=1; shift ;;
             --skip-frontend) SKIP_FRONTEND=1; shift ;;
             --skip-nginx) SKIP_NGINX=1; shift ;;
@@ -388,7 +391,95 @@ port_80_holder() {
     if ! command -v ss >/dev/null 2>&1; then
         return 0
     fi
-    ss -tlnp 2>/dev/null | grep ':80 ' | head -1 || true
+    ss -tlnp 2>/dev/null | grep -E ':80([^0-9]|$)' | head -1 || true
+}
+
+port_80_service() {
+    if systemctl is-active --quiet httpd 2>/dev/null; then
+        printf 'httpd\n'
+        return
+    fi
+    if systemctl is-active --quiet apache2 2>/dev/null; then
+        printf 'apache2\n'
+        return
+    fi
+    if systemctl is-active --quiet nginx 2>/dev/null; then
+        printf 'nginx\n'
+        return
+    fi
+
+    local holder=""
+    holder="$(port_80_holder)"
+    if [[ "$holder" == *httpd* ]]; then
+        printf 'httpd\n'
+        return
+    fi
+    if [[ "$holder" == *nginx* ]]; then
+        printf 'nginx\n'
+        return
+    fi
+    if [[ -n "$holder" ]]; then
+        printf 'unknown\n'
+        return
+    fi
+    printf '\n'
+}
+
+stop_httpd_if_requested() {
+    local unit=""
+    if systemctl list-unit-files httpd.service >/dev/null 2>&1; then
+        unit="httpd"
+    elif systemctl list-unit-files apache2.service >/dev/null 2>&1; then
+        unit="apache2"
+    else
+        die "Porta 80 occupata ma httpd/apache2 non trovato. Verifica: ss -tlnp | grep ':80'"
+    fi
+
+    log "Fermo ${unit} per liberare la porta 80..."
+    systemctl stop "$unit" 2>/dev/null || true
+    systemctl disable "$unit" 2>/dev/null || true
+    sleep 1
+
+    if [[ -n "$(port_80_holder)" ]]; then
+        log "Porta 80 ancora occupata dopo stop ${unit}:"
+        port_80_holder | sed 's/^/  /'
+        die "Libera manualmente la porta 80 oppure usa --nginx-port 8080"
+    fi
+    log "${unit} disattivato; nginx userà la porta 80"
+}
+
+ensure_port_80_available() {
+    [[ "$NGINX_PORT" == "80" ]] || return 0
+
+    local holder service
+    holder="$(port_80_holder)"
+    [[ -n "$holder" ]] || return 0
+
+    service="$(port_80_service)"
+    log "Porta 80 in uso (${service:-processo sconosciuto}):"
+    printf '  %s\n' "$holder"
+
+    case "$service" in
+        nginx)
+            log "nginx già presente sulla porta 80: aggiorno solo la configurazione log-dashboard"
+            ;;
+        httpd|apache2)
+            if [[ "$STOP_HTTPD" -eq 1 ]]; then
+                stop_httpd_if_requested
+            else
+                die "La porta 80 e' occupata da ${service} (tipico su Rocky Linux).
+  Opzioni:
+    1) sudo ./deploy_log_dashboard.sh --stop-httpd
+    2) sudo ./deploy_log_dashboard.sh --nginx-port 8080
+    3) sudo systemctl stop ${service} && sudo systemctl disable ${service}"
+            fi
+            ;;
+        *)
+            die "Porta 80 occupata da un servizio non gestito dallo script.
+  Verifica: sudo ss -tlnp | grep ':80'
+  Poi libera la porta o usa --nginx-port 8080"
+            ;;
+    esac
 }
 
 reload_or_start_nginx() {
@@ -408,15 +499,7 @@ install_nginx() {
 
     command -v nginx >/dev/null 2>&1 || die "nginx non installato"
 
-    if [[ "$NGINX_PORT" == "80" ]]; then
-        local holder
-        holder="$(port_80_holder)"
-        if [[ -n "$holder" ]] && ! systemctl is-active --quiet nginx 2>/dev/null; then
-            log "ATTENZIONE: porta 80 già in uso:"
-            printf '  %s\n' "$holder"
-            die "Libera la porta 80, oppure usa --nginx-port 8080 (es. http://${PUBLIC_HOST}:8080)"
-        fi
-    fi
+    ensure_port_80_available
 
     log "Configuro nginx in ${NGINX_CONF} (porta ${NGINX_PORT})..."
     cat >"$NGINX_CONF" <<EOF
@@ -426,6 +509,30 @@ server {
 
     root ${INSTALL_DIR}/frontend/dist;
     index index.html;
+
+    location /vettasoft/ {
+        proxy_pass http://127.0.0.1:${API_PORT}/vettasoft/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:${API_PORT}/vettasoft/api/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /widgets/ {
+        proxy_pass http://127.0.0.1:${API_PORT}/vettasoft/widgets/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
 
     location / {
         try_files \$uri \$uri/ /index.html;
