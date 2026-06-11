@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import load_settings
 from app.db import close_pool, init_pool, get_cursor
-from app.routers import charts, dashboard, logs, machines, metrics
+from app.routers import charts, dashboard, logs, machines, metrics, vettasoft_proxy
 
 
 logger = logging.getLogger(__name__)
@@ -60,6 +60,7 @@ def create_app() -> FastAPI:
     app.include_router(charts.router)
     app.include_router(metrics.router)
     app.include_router(dashboard.router)
+    app.include_router(vettasoft_proxy.router)
     app.mount("/uploads", StaticFiles(directory=str(settings.upload_dir)), name="uploads")
 
     @app.get("/health")

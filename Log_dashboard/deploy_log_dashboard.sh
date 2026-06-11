@@ -10,6 +10,7 @@
 #   --db-user USER       (default: counter)
 #   --db-password PASS   (default: CatisPg2026)
 #   --api-port PORT      (default: 8000)
+#   --nginx-port PORT    Porta frontend nginx (default: 80)
 #   --skip-db-schema     Non esegue setup-dashboard.sh
 #   --skip-frontend      Non builda il frontend (usa dist/ esistente)
 #   --skip-nginx         Non configura nginx
@@ -29,6 +30,7 @@ DB_NAME="raspberry_counter"
 DB_USER="counter"
 DB_PASSWORD="CatisPg2026"
 API_PORT="8000"
+NGINX_PORT="80"
 SKIP_DB_SCHEMA=0
 SKIP_FRONTEND=0
 SKIP_NGINX=0
@@ -51,6 +53,7 @@ parse_args() {
             --db-user) DB_USER="${2:-}"; shift 2 ;;
             --db-password) DB_PASSWORD="${2:-}"; shift 2 ;;
             --api-port) API_PORT="${2:-}"; shift 2 ;;
+            --nginx-port) NGINX_PORT="${2:-}"; shift 2 ;;
             --skip-db-schema) SKIP_DB_SCHEMA=1; shift ;;
             --skip-frontend) SKIP_FRONTEND=1; shift ;;
             --skip-nginx) SKIP_NGINX=1; shift ;;
@@ -237,9 +240,18 @@ EOF
     chown root:root "${backend_dst}/start-api.sh"
 }
 
+frontend_base_url() {
+    if [[ "$NGINX_PORT" == "80" ]]; then
+        printf 'http://%s' "$PUBLIC_HOST"
+    else
+        printf 'http://%s:%s' "$PUBLIC_HOST" "$NGINX_PORT"
+    fi
+}
+
 write_env_file() {
     local api_base="http://${PUBLIC_HOST}:${API_PORT}"
-    local web_base="http://${PUBLIC_HOST}"
+    local web_base
+    web_base="$(frontend_base_url)"
 
     if [[ -f "$ENV_FILE" ]]; then
         log "Config esistente: ${ENV_FILE} (non sovrascritto)"
@@ -372,6 +384,22 @@ EOF
     log "Servizio ${SERVICE_NAME} attivo"
 }
 
+port_80_holder() {
+    if ! command -v ss >/dev/null 2>&1; then
+        return 0
+    fi
+    ss -tlnp 2>/dev/null | grep ':80 ' | head -1 || true
+}
+
+reload_or_start_nginx() {
+    if systemctl is-active --quiet nginx 2>/dev/null; then
+        log "nginx già attivo: reload configurazione"
+        systemctl reload nginx
+        return
+    fi
+    systemctl start nginx
+}
+
 install_nginx() {
     if [[ "$SKIP_NGINX" -eq 1 ]]; then
         log "Salto configurazione nginx (--skip-nginx)"
@@ -380,10 +408,20 @@ install_nginx() {
 
     command -v nginx >/dev/null 2>&1 || die "nginx non installato"
 
-    log "Configuro nginx in ${NGINX_CONF}..."
+    if [[ "$NGINX_PORT" == "80" ]]; then
+        local holder
+        holder="$(port_80_holder)"
+        if [[ -n "$holder" ]] && ! systemctl is-active --quiet nginx 2>/dev/null; then
+            log "ATTENZIONE: porta 80 già in uso:"
+            printf '  %s\n' "$holder"
+            die "Libera la porta 80, oppure usa --nginx-port 8080 (es. http://${PUBLIC_HOST}:8080)"
+        fi
+    fi
+
+    log "Configuro nginx in ${NGINX_CONF} (porta ${NGINX_PORT})..."
     cat >"$NGINX_CONF" <<EOF
 server {
-    listen 80;
+    listen ${NGINX_PORT};
     server_name ${PUBLIC_HOST} _;
 
     root ${INSTALL_DIR}/frontend/dist;
@@ -397,8 +435,8 @@ EOF
 
     nginx -t
     systemctl enable nginx
-    systemctl restart nginx
-    log "nginx attivo su http://${PUBLIC_HOST}"
+    reload_or_start_nginx
+    log "nginx attivo su $(frontend_base_url)"
 }
 
 verify_deploy() {
@@ -420,7 +458,7 @@ Deploy completato.
 Directory   : ${INSTALL_DIR}
 Config API  : ${ENV_FILE}
 Servizio    : ${SERVICE_NAME}
-Frontend    : http://${PUBLIC_HOST}
+Frontend    : $(frontend_base_url)
 API         : http://${PUBLIC_HOST}:${API_PORT}
 Health      : http://${PUBLIC_HOST}:${API_PORT}/health
 

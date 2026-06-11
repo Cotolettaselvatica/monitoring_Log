@@ -12,5 +12,20 @@ export default defineConfig({
   server: {
     port: 5173,
     open: true,
+    proxy: {
+      "/vettasoft": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      // VettaSoft AJAX usa path assoluti (/api, /widgets); fallback se JS in cache e' vecchio
+      "/api": {
+        target: "http://localhost:8000/vettasoft",
+        changeOrigin: true,
+      },
+      "/widgets": {
+        target: "http://localhost:8000/vettasoft",
+        changeOrigin: true,
+      },
+    },
   },
 });

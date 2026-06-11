@@ -10,6 +10,7 @@ import { MachineAvatar } from "@/components/machines/MachineAvatar";
 import { LoadingState } from "@/components/common/LoadingState";
 import { DataGridShell } from "@/components/common/DataGridShell";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { ThirdPartyTelemetryPanel } from "@/components/machines/ThirdPartyTelemetryPanel";
 import { formatRelative } from "@/utils/format";
 import type { Machine } from "@/types";
 
@@ -119,6 +120,8 @@ export default function MachinesListPage() {
           </CardContent>
         </Card>
       ))}
+
+      <ThirdPartyTelemetryPanel />
     </>
   );
 }

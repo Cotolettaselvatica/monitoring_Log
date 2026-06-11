@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string;
   readonly VITE_RDP_GATEWAY_URL?: string;
+  readonly VITE_VETTASOFT_TELEMETRY_URL?: string;
 }
 
 interface ImportMeta {

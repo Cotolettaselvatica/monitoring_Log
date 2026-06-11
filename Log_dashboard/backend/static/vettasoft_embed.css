@@ -1,0 +1,53 @@
+/*
+ * Override CSS per VettaSoft nell'iframe del cruscotto.
+ * Modifica questo file e ricarica la pagina (Ctrl+Shift+R).
+ *
+ * Suggerimento: ispeziona l'iframe con DevTools → clic destro sull'iframe → "Inspect"
+ * per trovare classi e selettori da sovrascrivere.
+ */
+
+/* Esempio: nascondere footer copyright VettaSoft */
+/*
+footer,
+.form-signin + p,
+body > p:last-child {
+  display: none !important;
+}
+ */
+
+/* Widget 3D model viewer (nasconde l'intero pannello grid, non solo il canvas) */
+.grid-stack-item:has([id^="content_model_3d_viewer_"]),
+.grid-stack-item-content:has([id^="content_model_3d_viewer_"]),
+[id^="content_model_3d_viewer_"] {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  visibility: hidden !important;
+}
+
+model-viewer {
+  display: none !important;
+}
+
+/* Fallback shadow DOM interno model-viewer */
+.container:has(#webgl-canvas),
+.container:has(canvas[data-engine*="three.js"]) {
+  display: none !important;
+}
+
+/* Esempio: allineare colori al cruscotto CATIS */
+/*
+:root {
+  --bs-primary: #e2001a;
+  --bs-primary-rgb: 226, 0, 26;
+}
+
+.btn-primary {
+  background-color: #e2001a !important;
+  border-color: #e2001a !important;
+}
+*/
