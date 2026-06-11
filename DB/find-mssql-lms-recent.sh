@@ -68,7 +68,7 @@ done
 SQL_FILE="$(mktemp)"
 trap 'rm -f "$SQL_FILE"' EXIT
 
-cat >"$SQL_FILE" <<'EOSQL'
+cat >"$SQL_FILE" <<EOSQL
 SET NOCOUNT ON;
 
 IF OBJECT_ID('tempdb..#last') IS NOT NULL DROP TABLE #last;
@@ -79,6 +79,7 @@ CREATE TABLE #last (
 );
 
 DECLARE @schema sysname, @table sysname, @col sysname, @sql nvarchar(max);
+DECLARE @tbl varchar(256);
 
 DECLARE c CURSOR LOCAL FAST_FORWARD FOR
 SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME
@@ -91,16 +92,14 @@ FETCH NEXT FROM c INTO @schema, @table, @col;
 
 WHILE @@FETCH_STATUS = 0
 BEGIN
+  SET @tbl = @schema + '.' + @table;
   SET @sql = N'
     INSERT INTO #last (tbl, col, last_ts)
-    SELECT @t, @c, MAX(' + QUOTENAME(@col) + N')
+    SELECT N''' + REPLACE(@tbl, '''', '''''') + N''', N''' + REPLACE(@col, '''', '''''') + N''', MAX(' + QUOTENAME(@col) + N')
     FROM ' + QUOTENAME(@schema) + N'.' + QUOTENAME(@table) + N';';
 
   BEGIN TRY
-    EXEC sp_executesql @sql,
-      N'@t varchar(256), @c varchar(128)',
-      @t = @schema + N'.' + @table,
-      @c = @col;
+    EXEC sp_executesql @sql;
   END TRY
   BEGIN CATCH
   END CATCH;
@@ -113,7 +112,7 @@ DEALLOCATE c;
 
 SELECT GETDATE() AS sql_server_ora;
 
-SELECT TOP ($(TOP))
+SELECT TOP (${TOP_N})
   tbl,
   col,
   CONVERT(varchar(19), last_ts, 120) AS last_ts
@@ -129,5 +128,4 @@ printf '[find-recent] Nota: non combina colonne data+ora separate (es. o02d_data
 MSSQLCMDPASSWORD="$MSSQL_PASSWORD" "$SQLCMD" \
   -S "$SERVER" -U "$MSSQL_USER" -P "$MSSQL_PASSWORD" \
   -d "$MSSQL_DATABASE" -C -W -s ";" \
-  -v TOP="$TOP_N" \
   -i "$SQL_FILE"
