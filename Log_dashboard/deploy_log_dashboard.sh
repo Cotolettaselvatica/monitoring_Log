@@ -491,6 +491,64 @@ reload_or_start_nginx() {
     systemctl start nginx
 }
 
+disable_stock_nginx_site() {
+    local f
+    for f in /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/welcome.conf; do
+        if [[ -f "$f" && ! -f "${f}.disabled-by-log-dashboard" ]]; then
+            mv "$f" "${f}.disabled-by-log-dashboard"
+            log "Disabilitato ${f}"
+        fi
+    done
+
+    local main_conf="/etc/nginx/nginx.conf"
+    [[ -f "$main_conf" ]] || return 0
+    grep -q '/usr/share/nginx/html' "$main_conf" || return 0
+    grep -q 'log-dashboard: stock nginx server disabled' "$main_conf" && return 0
+
+    log "Disabilito server di default in ${main_conf} (/usr/share/nginx/html)..."
+    cp -a "$main_conf" "${main_conf}.bak.log-dashboard"
+
+    python3 <<'PY'
+import re
+from pathlib import Path
+
+path = Path("/etc/nginx/nginx.conf")
+text = path.read_text(encoding="utf-8")
+lines = text.splitlines()
+out: list[str] = []
+i = 0
+changed = False
+
+while i < len(lines):
+    line = lines[i]
+    if re.match(r"^\s*server\s*\{", line):
+        block = [line]
+        i += 1
+        depth = line.count("{") - line.count("}")
+        while i < len(lines) and depth > 0:
+            block.append(lines[i])
+            depth += lines[i].count("{") - lines[i].count("}")
+            i += 1
+        block_text = "\n".join(block)
+        if "/usr/share/nginx/html" in block_text:
+            changed = True
+            out.append("# log-dashboard: stock nginx server disabled")
+            for bline in block:
+                out.append(f"# {bline}" if bline.strip() else "#")
+        else:
+            out.extend(block)
+        continue
+    out.append(line)
+    i += 1
+
+if not changed:
+    raise SystemExit("server block con /usr/share/nginx/html non trovato")
+
+path.write_text("\n".join(out) + ("\n" if text.endswith("\n") else ""), encoding="utf-8")
+print("OK")
+PY
+}
+
 install_nginx() {
     if [[ "$SKIP_NGINX" -eq 1 ]]; then
         log "Salto configurazione nginx (--skip-nginx)"
@@ -500,12 +558,17 @@ install_nginx() {
     command -v nginx >/dev/null 2>&1 || die "nginx non installato"
 
     ensure_port_80_available
+    disable_stock_nginx_site
+
+    local nginx_host
+    nginx_host="$(hostname -s 2>/dev/null || hostname 2>/dev/null || true)"
 
     log "Configuro nginx in ${NGINX_CONF} (porta ${NGINX_PORT})..."
     cat >"$NGINX_CONF" <<EOF
 server {
-    listen ${NGINX_PORT};
-    server_name ${PUBLIC_HOST} _;
+    listen ${NGINX_PORT} default_server;
+    listen ${PUBLIC_HOST}:${NGINX_PORT} default_server;
+    server_name ${PUBLIC_HOST} ${nginx_host} _;
 
     root ${INSTALL_DIR}/frontend/dist;
     index index.html;
