@@ -142,7 +142,9 @@ find_sqlcmd() {
 }
 
 probe_sql_sqlcmd() {
-  local sqlcmd_bin server query_file
+  local sqlcmd_bin="$1"
+  local server query_file
+  [[ -n "$sqlcmd_bin" && -x "$sqlcmd_bin" ]] || die "sqlcmd non valido: ${sqlcmd_bin:-<vuoto>}"
   server="$(mssql_server)"
   query_file="$(mktemp)"
   sql_query >"$query_file"
