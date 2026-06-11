@@ -26,7 +26,11 @@ ensure_service_user() {
 
 install_packages() {
     log "Installo pacchetti di sistema..."
-    dnf install -y python3 python3-pip
+    dnf install -y python3 python3-pip unixODBC unixODBC-devel
+    if [[ ! -f /etc/yum.repos.d/mssql-release.repo ]]; then
+        curl -fsSL https://packages.microsoft.com/config/rhel/9/prod.repo -o /etc/yum.repos.d/mssql-release.repo
+    fi
+    ACCEPT_EULA=Y dnf install -y msodbcsql18 || log "msodbcsql18 non installato (serve per source_type mssql)"
 }
 
 install_start_script() {

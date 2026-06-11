@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ def parse_log_line(
 class OffsetStore:
     def __init__(self, path: Path) -> None:
         self._path = path
-        self._offsets: Dict[str, int] = {}
+        self._offsets: Dict[str, Any] = {}
         self._load()
 
     def _load(self) -> None:
@@ -83,11 +83,11 @@ class OffsetStore:
         with self._path.open(encoding="utf-8") as handle:
             self._offsets = json.load(handle)
 
-    def get(self, source_id: str) -> int:
-        return int(self._offsets.get(source_id, 0))
+    def get(self, source_id: str, default: Any = 0) -> Any:
+        return self._offsets.get(source_id, default)
 
-    def set(self, source_id: str, offset: int) -> None:
-        self._offsets[source_id] = offset
+    def set(self, source_id: str, value: Any) -> None:
+        self._offsets[source_id] = value
 
     def save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)

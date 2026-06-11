@@ -171,38 +171,52 @@ machines:
 
 | Campo | Descrizione |
 |-------|-------------|
-| `id` | ID univoco sorgente (usato per offset e deduplica) |
-| `smb_host` | IP o hostname del macchinario |
+| `id` | ID univoco sorgente (usato per offset/watermark) |
+| `source_type` | `smb` (default) oppure `mssql` |
+| `smb_host` | IP o hostname del macchinario (solo SMB) |
 | `smb_share` | Nome share SMB |
-| `log_path` | Percorso file dentro la share (es. `pezzi.log` o `logs/pezzi.log`) |
-| `log_dir` | Cartella log con **file giornaliero** (alternativa a `log_path`) |
-| `log_file_prefix` | Prefisso nome file giornaliero (es. `Trace_`) |
-| `log_file_date_format` | Formato data strftime (es. `%d%m%y` → `Trace_110626`) |
+| `log_path` | Percorso file dentro la share |
+| `log_dir` | Cartella log con file giornaliero (alternativa a `log_path`) |
+| `log_file_prefix` | Prefisso file giornaliero |
+| `log_file_date_format` | Formato data strftime |
 | `username` / `password` | Credenziali SMB |
-| `domain` | Dominio Windows (opzionale, lasciare `""` su Raspberry) |
-| `nome_macchinario` / `nome_pezzo` | Default se il log contiene solo il timestamp |
+| `domain` | Dominio Windows (opzionale) |
+| `mssql_*` | Connessione SQL Server (vedi sotto) |
+| `nome_macchinario` / `nome_pezzo` | Default se il log/SQL non li fornisce |
 
-Per aggiungere un macchinario: aggiungi una voce in `machines.yaml`. Non serve riavviare il codice se usi lo stesso file; al prossimo ciclo la legge.
+Per aggiungere un macchinario: aggiungi una voce in `machines.yaml`. Al prossimo ciclo la legge.
 
-#### File log giornaliero (es. LMS Trace)
+#### Sorgente MSSQL (LMS — sostituisce trace SMB)
 
-Se ogni giorno viene creato un file diverso (es. `Trace_110626` = 11/06/26):
+Per macchine con database SQL Server locale (es. LMS `10.0.0.241`, istanza `MULTIDB_2022`, porta `49543`):
+
+1. Crea login SQL readonly su `lms_010` (vedi `DB/probe-mssql.sh`)
+2. Scopri colonne tabella produzione:
+
+```bash
+cd DB
+MSSQL_USER=catis_readonly MSSQL_PASSWORD='...' ./explore-mssql-lms.sh
+```
+
+3. Configura `machines.yaml`:
 
 ```yaml
   - id: LMS_asservimento_DVK_3LMS-R25-PA-AU
-    smb_host: 10.0.0.241
-    smb_share: C
-    log_dir: LMS/Trace
-    log_file_prefix: Trace_
-    log_file_date_format: "%d%m%y"
-    username: LMS
-    password: dvk
-    domain: ""
+    source_type: mssql
+    mssql_host: 10.0.0.241
+    mssql_port: 49543
+    mssql_database: lms_010
+    mssql_user: catis_readonly
+    mssql_password: "..."
+    mssql_table: dbo.m06_log_produzione
+    mssql_timestamp_column: NOME_COLONNA_DATA
+    mssql_piece_column: NOME_COLONNA_PEZZO   # opzionale
+    mssql_lookback_hours: 24
     nome_macchinario: LMS_asservimento_DVK_3LMS-R25-PA-AU
     nome_pezzo: inserimento_corpo_sifone
 ```
 
-Oggi legge `LMS/Trace/Trace_110626`; a mezzanotte passa automaticamente al file del giorno successivo (offset separato per file).
+Sul server Rocky serve ODBC Driver 18: `DB/install-mssql-client-rocky.sh` e `pip install pyodbc`.
 
 ---
 
@@ -212,7 +226,7 @@ Oggi legge `LMS/Trace/Trace_110626`; a mezzanotte passa automaticamente al file 
 
 - Rocky Linux 8/9 (o container LXC)
 - Python 3.9+
-- Accesso di rete alle share SMB delle macchine Windows
+- Accesso di rete alle share SMB **oppure** SQL Server (porta TCP, es. LMS `49543`)
 - PostgreSQL raggiungibile in LAN (porta 5432)
 
 ### Setup
@@ -236,7 +250,7 @@ Su container LXC senza systemd, il deploy usa **cron @reboot** come fallback.
 
 Poi modifica:
 1. `/etc/win-log-aggregator.env` — credenziali PostgreSQL
-2. `/opt/win-log-aggregator/config/machines.yaml` — elenco macchine Windows e share SMB
+2. `/opt/win-log-aggregator/config/machines.yaml` — elenco macchine (SMB `pezzi.log` o MSSQL)
 
 Esegui lo schema SQL su PostgreSQL (se non già fatto):
 
