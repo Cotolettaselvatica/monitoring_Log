@@ -63,6 +63,13 @@ def _coerce_datetime(value: Any) -> datetime:
     raise ValueError(f"Timestamp non supportato: {value!r}")
 
 
+def _filter_clause(source: MachineSource) -> Tuple[str, List[Any]]:
+    if not source.mssql_filter_column or not source.mssql_filter_value:
+        return "", []
+    col = _quote_column(source.mssql_filter_column)
+    return f" AND {col} = ?", [source.mssql_filter_value]
+
+
 def _connect(source: MachineSource):
     import pyodbc
 
@@ -95,6 +102,7 @@ def read_new_rows(
     machine_col = (
         _quote_column(source.mssql_machine_column) if source.mssql_machine_column else None
     )
+    filter_sql, filter_params = _filter_clause(source)
 
     ts_expr = _datetime_expr(date_col, time_col)
     select_cols = [f"{ts_expr} AS event_ts"]
@@ -112,16 +120,16 @@ def read_new_rows(
             since = datetime.now() - timedelta(hours=source.mssql_lookback_hours)
             query = (
                 f"SELECT {', '.join(select_cols)} FROM {table} "
-                f"WHERE {ts_expr} >= ? ORDER BY {id_col}"
+                f"WHERE {ts_expr} >= ?{filter_sql} ORDER BY {id_col}"
             )
-            params = [since]
+            params = [since, *filter_params]
             new_watermark_from = "id"
         else:
             query = (
                 f"SELECT {', '.join(select_cols)} FROM {table} "
-                f"WHERE {id_col} > ? ORDER BY {id_col}"
+                f"WHERE {id_col} > ?{filter_sql} ORDER BY {id_col}"
             )
-            params = [last_id]
+            params = [last_id, *filter_params]
             new_watermark_from = "id"
     else:
         since = _parse_datetime_watermark(watermark)
@@ -129,9 +137,9 @@ def read_new_rows(
             since = datetime.now() - timedelta(hours=source.mssql_lookback_hours)
         query = (
             f"SELECT {', '.join(select_cols)} FROM {table} "
-            f"WHERE {ts_expr} > ? ORDER BY {ts_expr}"
+            f"WHERE {ts_expr} > ?{filter_sql} ORDER BY {ts_expr}"
         )
-        params = [since]
+        params = [since, *filter_params]
         new_watermark_from = "timestamp"
 
     pieces: List[ParsedPiece] = []

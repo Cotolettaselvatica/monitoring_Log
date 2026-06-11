@@ -208,16 +208,18 @@ MSSQL_USER=catis_readonly MSSQL_PASSWORD='...' ./explore-mssql-lms.sh
     mssql_database: lms_010
     mssql_user: catis_readonly
     mssql_password: "..."
-    mssql_table: dbo.m06_log_produzione
-    mssql_id_column: m06n_id
-    mssql_timestamp_column: m06d_data
-    mssql_time_column: m06s_ora
-    mssql_lookback_hours: 24
+    mssql_table: dbo.o02_eventi_ordini
+    mssql_id_column: o02n_id
+    mssql_timestamp_column: o02d_data_evento
+    mssql_time_column: o02s_ora_evento
+    mssql_filter_column: o02s_stato
+    mssql_filter_value: "FINE LAVORAZIONE"
+    mssql_lookback_hours: 168
     nome_macchinario: LMS_asservimento_DVK_3LMS-R25-PA-AU
     nome_pezzo: inserimento_corpo_sifone
 ```
 
-Ogni riga in `m06_log_produzione` è un evento (es. `CARICO CASSETTA`) → un conteggio in PostgreSQL. Data e ora sono in `m06d_data` + `m06s_ora`; il sync incrementale usa `m06n_id`.
+Conta solo righe con `o02s_stato = 'FINE LAVORAZIONE'` (fine ciclo = un pezzo). Sync incrementale su `o02n_id`; data/ora in `o02d_data_evento` + `o02s_ora_evento`.
 
 Sul server Rocky serve ODBC Driver 18: `DB/install-mssql-client-rocky.sh` e `pip install pyodbc`.
 

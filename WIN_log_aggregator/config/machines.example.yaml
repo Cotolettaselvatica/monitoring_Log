@@ -6,14 +6,16 @@ machines:
     mssql_database: lms_010
     mssql_user: catis_readonly
     mssql_password: CHANGE_ME
-    mssql_table: dbo.m06_log_produzione
-    mssql_id_column: m06n_id
-    mssql_timestamp_column: m06d_data
-    mssql_time_column: m06s_ora
-    # ogni riga = un evento (es. CARICO CASSETTA); nome_pezzo resta quello sotto
+    # Una riga FINE LAVORAZIONE = un pezzo lavorato
+    mssql_table: dbo.o02_eventi_ordini
+    mssql_id_column: o02n_id
+    mssql_timestamp_column: o02d_data_evento
+    mssql_time_column: o02s_ora_evento
+    mssql_filter_column: o02s_stato
+    mssql_filter_value: "FINE LAVORAZIONE"
     mssql_piece_column:
     mssql_machine_column:
-    mssql_lookback_hours: 24
+    mssql_lookback_hours: 168
     nome_macchinario: LMS_asservimento_DVK_3LMS-R25-PA-AU
     nome_pezzo: inserimento_corpo_sifone
 

@@ -46,6 +46,8 @@ class MachineSource:
     mssql_id_column: str = ""
     mssql_piece_column: str = ""
     mssql_machine_column: str = ""
+    mssql_filter_column: str = ""
+    mssql_filter_value: str = ""
     mssql_driver: str = "ODBC Driver 18 for SQL Server"
     mssql_lookback_hours: int = 24
 
@@ -107,6 +109,8 @@ def _parse_machine(item: dict) -> MachineSource:
             mssql_id_column=str(item.get("mssql_id_column", "") or ""),
             mssql_piece_column=str(item.get("mssql_piece_column", "") or ""),
             mssql_machine_column=str(item.get("mssql_machine_column", "") or ""),
+            mssql_filter_column=str(item.get("mssql_filter_column", "") or ""),
+            mssql_filter_value=str(item.get("mssql_filter_value", "") or ""),
             mssql_driver=str(
                 item.get("mssql_driver", "ODBC Driver 18 for SQL Server")
             ),
