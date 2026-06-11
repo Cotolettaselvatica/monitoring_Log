@@ -7,8 +7,10 @@ machines:
     mssql_user: catis_readonly
     mssql_password: CHANGE_ME
     mssql_table: dbo.m06_log_produzione
-    # Colonne: scoprile con DB/explore-mssql-lms.sh
-    mssql_timestamp_column: CHANGE_ME
+    mssql_id_column: m06n_id
+    mssql_timestamp_column: m06d_data
+    mssql_time_column: m06s_ora
+    # ogni riga = un evento (es. CARICO CASSETTA); nome_pezzo resta quello sotto
     mssql_piece_column:
     mssql_machine_column:
     mssql_lookback_hours: 24

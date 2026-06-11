@@ -209,12 +209,15 @@ MSSQL_USER=catis_readonly MSSQL_PASSWORD='...' ./explore-mssql-lms.sh
     mssql_user: catis_readonly
     mssql_password: "..."
     mssql_table: dbo.m06_log_produzione
-    mssql_timestamp_column: NOME_COLONNA_DATA
-    mssql_piece_column: NOME_COLONNA_PEZZO   # opzionale
+    mssql_id_column: m06n_id
+    mssql_timestamp_column: m06d_data
+    mssql_time_column: m06s_ora
     mssql_lookback_hours: 24
     nome_macchinario: LMS_asservimento_DVK_3LMS-R25-PA-AU
     nome_pezzo: inserimento_corpo_sifone
 ```
+
+Ogni riga in `m06_log_produzione` è un evento (es. `CARICO CASSETTA`) → un conteggio in PostgreSQL. Data e ora sono in `m06d_data` + `m06s_ora`; il sync incrementale usa `m06n_id`.
 
 Sul server Rocky serve ODBC Driver 18: `DB/install-mssql-client-rocky.sh` e `pip install pyodbc`.
 

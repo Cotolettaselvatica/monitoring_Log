@@ -42,6 +42,8 @@ class MachineSource:
     mssql_password: str = ""
     mssql_table: str = ""
     mssql_timestamp_column: str = ""
+    mssql_time_column: str = ""
+    mssql_id_column: str = ""
     mssql_piece_column: str = ""
     mssql_machine_column: str = ""
     mssql_driver: str = "ODBC Driver 18 for SQL Server"
@@ -101,6 +103,8 @@ def _parse_machine(item: dict) -> MachineSource:
             mssql_password=str(item["mssql_password"]),
             mssql_table=str(item["mssql_table"]),
             mssql_timestamp_column=str(item["mssql_timestamp_column"]),
+            mssql_time_column=str(item.get("mssql_time_column", "") or ""),
+            mssql_id_column=str(item.get("mssql_id_column", "") or ""),
             mssql_piece_column=str(item.get("mssql_piece_column", "") or ""),
             mssql_machine_column=str(item.get("mssql_machine_column", "") or ""),
             mssql_driver=str(
