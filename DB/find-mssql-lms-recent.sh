@@ -99,7 +99,7 @@ BEGIN
   BEGIN TRY
     EXEC sp_executesql @sql,
       N'@t varchar(256), @c varchar(128)',
-      @t = @schema + ''.'' + @table,
+      @t = @schema + N'.' + @table,
       @c = @col;
   END TRY
   BEGIN CATCH
