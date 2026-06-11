@@ -51,6 +51,10 @@ parse_args() {
 }
 
 load_env() {
+  # Non sovrascrivere credenziali passate da CLI (--user / MSSQL_USER=...)
+  local saved_user="${MSSQL_USER:-}"
+  local saved_password="${MSSQL_PASSWORD:-}"
+
   if [[ "$USE_LMS_PROFILE" -eq 1 && -f "${ROOT}/mssql-lms.env.example" ]]; then
     set -a
     # shellcheck disable=SC1091
@@ -63,6 +67,9 @@ load_env() {
     source "${ROOT}/.env"
     set +a
   fi
+
+  [[ -n "$saved_user" ]] && MSSQL_USER="$saved_user"
+  [[ -n "$saved_password" ]] && MSSQL_PASSWORD="$saved_password"
 }
 
 mssql_server() {
