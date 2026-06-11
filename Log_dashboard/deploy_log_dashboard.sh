@@ -15,6 +15,7 @@
 #   --skip-db-schema     Non esegue setup-dashboard.sh
 #   --skip-frontend      Non builda il frontend (usa dist/ esistente)
 #   --skip-nginx         Non configura nginx
+#   --skip-firewall      Non apre porte su firewalld
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,6 +37,7 @@ STOP_HTTPD=0
 SKIP_DB_SCHEMA=0
 SKIP_FRONTEND=0
 SKIP_NGINX=0
+SKIP_FIREWALL=0
 
 log() { printf '[deploy] %s\n' "$*"; }
 die() { printf '[deploy] ERRORE: %s\n' "$*" >&2; exit 1; }
@@ -60,6 +62,7 @@ parse_args() {
             --skip-db-schema) SKIP_DB_SCHEMA=1; shift ;;
             --skip-frontend) SKIP_FRONTEND=1; shift ;;
             --skip-nginx) SKIP_NGINX=1; shift ;;
+            --skip-firewall) SKIP_FIREWALL=1; shift ;;
             -h|--help) usage ;;
             *) die "Opzione sconosciuta: $1 (usa --help)" ;;
         esac
@@ -609,6 +612,34 @@ EOF
     log "nginx attivo su $(frontend_base_url)"
 }
 
+configure_firewall() {
+    if [[ "$SKIP_FIREWALL" -eq 1 ]]; then
+        log "Salto configurazione firewall (--skip-firewall)"
+        return
+    fi
+
+    if ! command -v firewall-cmd >/dev/null 2>&1; then
+        log "firewalld non installato: salto apertura porte"
+        return
+    fi
+
+    log "Configuro firewalld (frontend:${NGINX_PORT}, api:${API_PORT})..."
+
+    if [[ "$NGINX_PORT" == "80" ]]; then
+        firewall-cmd --permanent --add-service=http >/dev/null 2>&1 || true
+    else
+        firewall-cmd --permanent --add-port="${NGINX_PORT}/tcp" >/dev/null 2>&1 || true
+    fi
+    firewall-cmd --permanent --add-port="${API_PORT}/tcp" >/dev/null 2>&1 || true
+
+    if systemctl is-active --quiet firewalld 2>/dev/null; then
+        firewall-cmd --reload >/dev/null
+        log "Firewall attivo: services=$(firewall-cmd --list-services 2>/dev/null) ports=$(firewall-cmd --list-ports 2>/dev/null)"
+    else
+        log "firewalld non attivo: regole permanenti salvate (http + ${API_PORT}/tcp)"
+    fi
+}
+
 verify_deploy() {
     local api_base="http://${PUBLIC_HOST}:${API_PORT}"
     log "Verifica API ${api_base}/health ..."
@@ -663,6 +694,7 @@ main() {
     build_frontend
     install_systemd_service
     install_nginx
+    configure_firewall
     verify_deploy
     show_summary
 }
