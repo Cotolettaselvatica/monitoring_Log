@@ -65,7 +65,7 @@ machines:
     username: LASER
     password: laser
     domain:
-    nome_macchinario: Lasit_Mikromark_G3_NP115874
+    nome_macchinario: Lasit_Rotomark_NP114459
     nome_pezzo: incisione_laser_pulsante_ottone_cromato
     #No pass di admin, no RDP per ora
 
