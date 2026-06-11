@@ -1,20 +1,135 @@
 machines:
-  - id: linea1_macchina_a
-    smb_host: 192.168.1.10
-    smb_share: logs
-    log_path: pezzi.log
-    username: pi
-    password: password_pi
+  - id: LMS_asservimento_DVK_3LMS-R25-PA-AU
+    smb_host: 10.0.0.241
+    smb_share: C
+    log_dir: LMS/Trace
+    log_file_prefix: Trace_
+    log_file_date_format: "%d%m%y"
+    username: LMS
+    password: dvk
     domain: ""
-    nome_macchinario: Linea1_MacchinaA
-    nome_pezzo: ComponenteXYZ
+    nome_macchinario: LMS_asservimento_DVK_3LMS-R25-PA-AU
+    nome_pezzo: inserimento_corpo_sifone
 
-  - id: linea1_macchina_b
-    smb_host: 192.168.1.11
+  - id: DVK_3W-MOA6-8C
+    smb_host: 10.0.0.238
     smb_share: logs
     log_path: pezzi.log
-    username: pi
-    password: password_pi
+    username: DVK
+    password: dvk
+    domain:
+    nome_macchinario: DVK_3W-MOA6-8C
+    nome_pezzo: lavorazione_corpo_sifone
+
+  #- id: Logicat_verniciatura_4412023269
+  #  smb_host: 10.0.0.200
+  #  smb_share: 
+  #  log_path: 
+  #  username: 
+  #  password: 
+  #  domain: ""
+  #  nome_macchinario: Logicat_verniciatura_4412023269
+  #  nome_pezzo: verniciatura_polvere_sifone
+    #Aprire iframe del produttore
+
+  #- id: Logicat_lavorazione_telaini_241990100
+  #  smb_host: 10.0.0.2
+  #  smb_share: 
+  #  log_path: 
+  #  username: 
+  #  password: 
+  #  domain: ""
+  #  nome_macchinario: Logicat_lavorazione_telaini_241990100
+  #  nome_pezzo: verniciatura_polvere_sifone
+    #Aprire iframe del produttore
+
+  - id: Lasit_Mikromark_G3_NP115874
+    smb_host: 10.0.0.237
+    smb_share: logs
+    log_path: pezzi.log
+    username: LASER
+    password: laser
+    domain:
+    nome_macchinario: Lasit_Mikromark_G3_NP115874
+    nome_pezzo: incisione_laser
+    #No pass di admin, no RDP per ora, cavo crimpato male
+
+  - id: Lasit_Rotomark_NP114459
+    smb_host: 10.0.0.236
+    smb_share: logs
+    log_path: pezzi.log
+    username: LASER
+    password: laser
+    domain:
+    nome_macchinario: Lasit_Mikromark_G3_NP115874
+    nome_pezzo: incisione_laser_pulsante_ottone_cromato
+    #No pass di admin, no RDP per ora
+
+  - id: DVK_asservimento_LR_MATE_200iD
+    smb_host: 10.0.0.224
+    smb_share: logs
+    log_path: pezzi.log
+    username: SPECIALVIDEO
+    password: dvk
+    domain: "catis.local"
+    nome_macchinario: DVK_asservimento_LR_MATE_200iD
+    nome_pezzo: inserimento_rubinetto_acqua_in_ottone
+
+  - id: DVK_121120-886
+    smb_host: 10.0.0.222
+    smb_share: logs
+    log_path: pezzi.log
+    username: DVK
+    password: dvk
+    domain: "catis.local"
+    nome_macchinario: DVK_121120-886
+    nome_pezzo: filettatura_rubinetto_acqua_in_ottone
+
+  - id: TORNOS_T1_Delta_1204
+    smb_host: 10.0.0.???
+    smb_share: logs
+    log_path: pezzi.log
+    username:
+    password: 
     domain: ""
-    nome_macchinario: Linea1_MacchinaB
-    nome_pezzo: ComponenteXYZ
+    nome_macchinario: TORNOS_T1_Delta_1204
+    nome_pezzo: tornitura_asta_ottone
+
+  - id: HYUNDAI_WIA_kit_450
+    smb_host: 10.0.0.???
+    smb_share: logs
+    log_path: pezzi.log
+    username:
+    password: 
+    domain: "catis.local"
+    nome_macchinario: HYUNDAI_WIA_kit_450
+    nome_pezzo: tornitura_rondella_in_ottone
+
+  - id: HYUNDAI_WIA_kit_4500
+    smb_host: 10.0.0.???
+    smb_share: logs
+    log_path: pezzi.log
+    username:
+    password: 
+    domain: "catis.local"
+    nome_macchinario: HYUNDAI_WIA_kit_4500
+    nome_pezzo: tornitura_chiavarda_in_ottone
+
+  - id: SCHMALZ_jumboflex
+    smb_host: 10.0.0.???
+    smb_share: logs
+    log_path: pezzi.log
+    username:
+    password: 
+    domain: "catis.local"
+    nome_macchinario: SCHMALZ_jumboflex
+    nome_pezzo: ore_di_utilizzo
+    #Contare le ore di utilizzo sulla base dell'assorbimento elettrico, @martinelli
+
+      
+   
+#OK -----------------------------------------
+
+
+    
+

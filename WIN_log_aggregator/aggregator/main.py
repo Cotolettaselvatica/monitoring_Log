@@ -7,7 +7,7 @@ import time
 from aggregator.config import load_settings
 from aggregator.db import PieceRepository
 from aggregator.parser import OffsetStore
-from aggregator.smb_reader import read_new_lines
+from aggregator.smb_reader import read_new_lines, resolve_log_path
 
 logger = logging.getLogger(__name__)
 running = True
@@ -31,11 +31,13 @@ def process_all_sources(settings, repository: PieceRepository, offsets: OffsetSt
     imported = 0
 
     for source in settings.machines:
-        start_offset = offsets.get(source.id)
+        log_path = resolve_log_path(source)
+        offset_key = f"{source.id}:{log_path}"
+        start_offset = offsets.get(offset_key)
         try:
-            pieces, new_offset = read_new_lines(source, start_offset)
+            pieces, new_offset, log_path = read_new_lines(source, start_offset)
         except Exception:
-            logger.exception("Errore lettura SMB per sorgente %s", source.id)
+            logger.exception("Errore lettura SMB per sorgente %s (%s)", source.id, log_path)
             continue
 
         for piece in pieces:
@@ -43,10 +45,11 @@ def process_all_sources(settings, repository: PieceRepository, offsets: OffsetSt
                 imported += 1
 
         if new_offset != start_offset:
-            offsets.set(source.id, new_offset)
+            offsets.set(offset_key, new_offset)
             logger.info(
-                "Sorgente %s: %s nuove righe, offset %s -> %s",
+                "Sorgente %s (%s): %s nuove righe, offset %s -> %s",
                 source.id,
+                log_path,
                 len(pieces),
                 start_offset,
                 new_offset,

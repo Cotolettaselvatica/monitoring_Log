@@ -23,11 +23,14 @@ class MachineSource:
     id: str
     smb_host: str
     smb_share: str
-    log_path: str
     username: str
     password: str
     nome_macchinario: str
     nome_pezzo: str
+    log_path: str = ""
+    log_dir: str = ""
+    log_file_prefix: str = ""
+    log_file_date_format: str = ""
     domain: str = ""
 
 
@@ -57,12 +60,31 @@ def _load_machines(config_path: Path) -> List[MachineSource]:
 
     result: List[MachineSource] = []
     for item in machines:
+        log_dir = str(item.get("log_dir", "") or "").strip().replace("\\", "/")
+        log_path = str(item.get("log_path", "") or "").strip().replace("\\", "/")
+        log_file_prefix = str(item.get("log_file_prefix", "") or "")
+        log_file_date_format = str(item.get("log_file_date_format", "") or "")
+
+        if log_dir:
+            if not log_file_date_format:
+                raise ValueError(
+                    f"Macchina {item.get('id')}: log_dir richiede log_file_date_format "
+                    "(es. '%d%m%y' per Trace_110626)"
+                )
+        elif not log_path:
+            raise ValueError(
+                f"Macchina {item.get('id')}: serve log_path oppure log_dir + log_file_date_format"
+            )
+
         result.append(
             MachineSource(
                 id=str(item["id"]),
                 smb_host=str(item["smb_host"]),
                 smb_share=str(item["smb_share"]),
-                log_path=str(item["log_path"]),
+                log_path=log_path,
+                log_dir=log_dir,
+                log_file_prefix=log_file_prefix,
+                log_file_date_format=log_file_date_format,
                 username=str(item["username"]),
                 password=str(item["password"]),
                 nome_macchinario=str(item["nome_macchinario"]),

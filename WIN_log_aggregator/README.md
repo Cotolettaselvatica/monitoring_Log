@@ -175,11 +175,34 @@ machines:
 | `smb_host` | IP o hostname del macchinario |
 | `smb_share` | Nome share SMB |
 | `log_path` | Percorso file dentro la share (es. `pezzi.log` o `logs/pezzi.log`) |
+| `log_dir` | Cartella log con **file giornaliero** (alternativa a `log_path`) |
+| `log_file_prefix` | Prefisso nome file giornaliero (es. `Trace_`) |
+| `log_file_date_format` | Formato data strftime (es. `%d%m%y` → `Trace_110626`) |
 | `username` / `password` | Credenziali SMB |
 | `domain` | Dominio Windows (opzionale, lasciare `""` su Raspberry) |
 | `nome_macchinario` / `nome_pezzo` | Default se il log contiene solo il timestamp |
 
 Per aggiungere un macchinario: aggiungi una voce in `machines.yaml`. Non serve riavviare il codice se usi lo stesso file; al prossimo ciclo la legge.
+
+#### File log giornaliero (es. LMS Trace)
+
+Se ogni giorno viene creato un file diverso (es. `Trace_110626` = 11/06/26):
+
+```yaml
+  - id: LMS_asservimento_DVK_3LMS-R25-PA-AU
+    smb_host: 10.0.0.241
+    smb_share: C
+    log_dir: LMS/Trace
+    log_file_prefix: Trace_
+    log_file_date_format: "%d%m%y"
+    username: LMS
+    password: dvk
+    domain: ""
+    nome_macchinario: LMS_asservimento_DVK_3LMS-R25-PA-AU
+    nome_pezzo: inserimento_corpo_sifone
+```
+
+Oggi legge `LMS/Trace/Trace_110626`; a mezzanotte passa automaticamente al file del giorno successivo (offset separato per file).
 
 ---
 
