@@ -1,5 +1,6 @@
 export const endpoints = {
   machines: "/machines",
+  aggregatorMachines: "/aggregator-machines",
   machine: (id: string) => `/machines/${id}`,
   machineImage: (id: string) => `/machines/${id}/image`,
   machineLogs: (id: string) => `/machines/${id}/logs`,

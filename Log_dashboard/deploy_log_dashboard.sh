@@ -279,6 +279,9 @@ CORS_ORIGINS=${web_base},http://127.0.0.1,http://localhost
 
 UPLOAD_DIR=${INSTALL_DIR}/backend/uploads
 PUBLIC_BASE_URL=${api_base}
+
+# Elenco macchine Windows per sezione RDP in /machines (opzionale)
+# AGGREGATOR_MACHINES_CONFIG=/opt/win-log-aggregator/config/machines.yaml
 EOF
     chmod 600 "$ENV_FILE"
     chown "${SERVICE_USER}:${SERVICE_USER}" "$ENV_FILE"

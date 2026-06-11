@@ -11,6 +11,7 @@ import { LoadingState } from "@/components/common/LoadingState";
 import { DataGridShell } from "@/components/common/DataGridShell";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ThirdPartyTelemetryPanel } from "@/components/machines/ThirdPartyTelemetryPanel";
+import { WinAggregatorMachinesPanel } from "@/components/machines/WinAggregatorMachinesPanel";
 import { formatRelative } from "@/utils/format";
 import type { Machine } from "@/types";
 
@@ -121,6 +122,7 @@ export default function MachinesListPage() {
         </Card>
       ))}
 
+      <WinAggregatorMachinesPanel />
       <ThirdPartyTelemetryPanel />
     </>
   );

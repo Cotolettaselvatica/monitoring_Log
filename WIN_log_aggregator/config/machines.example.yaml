@@ -1,25 +1,17 @@
 machines:
   - id: LMS_asservimento_DVK_3LMS-R25-PA-AU
-    source_type: mssql
-    mssql_host: 10.0.0.241
-    mssql_port: 49543
-    mssql_database: lms_010
-    mssql_user: catis_readonly
-    mssql_password: CHANGE_ME
-    # Una riga FINE LAVORAZIONE = un pezzo lavorato
-    mssql_table: dbo.o02_eventi_ordini
-    mssql_id_column: o02n_id
-    mssql_timestamp_column: o02d_data_evento
-    mssql_time_column: o02s_ora_evento
-    mssql_filter_column: o02s_stato
-    mssql_filter_value: "FINE LAVORAZIONE"
-    mssql_piece_column:
-    mssql_machine_column:
-    mssql_lookback_hours: 168
+    connected: true
+    smb_host: 10.0.0.241
+    smb_share: logs
+    log_path: pezzi.log
+    username: LMS
+    password: dvk
+    domain: ""
     nome_macchinario: LMS_asservimento_DVK_3LMS-R25-PA-AU
     nome_pezzo: inserimento_corpo_sifone
 
   - id: DVK_3W-MOA6-8C
+    connected: true
     smb_host: 10.0.0.238
     smb_share: logs
     log_path: pezzi.log
@@ -30,6 +22,7 @@ machines:
     nome_pezzo: lavorazione_corpo_sifone
 
   #- id: Logicat_verniciatura_4412023269
+  #  connected: false
   #  smb_host: 10.0.0.200
   #  smb_share: 
   #  log_path: 
@@ -41,6 +34,7 @@ machines:
     #Aprire iframe del produttore
 
   #- id: Logicat_lavorazione_telaini_241990100
+  #  connected: false
   #  smb_host: 10.0.0.2
   #  smb_share: 
   #  log_path: 
@@ -52,6 +46,7 @@ machines:
     #Aprire iframe del produttore
 
   - id: Lasit_Mikromark_G3_NP115874
+    connected: false
     smb_host: 10.0.0.237
     smb_share: logs
     log_path: pezzi.log
@@ -63,6 +58,7 @@ machines:
     #No pass di admin, no RDP per ora, cavo crimpato male
 
   - id: Lasit_Rotomark_NP114459
+    connected: false
     smb_host: 10.0.0.236
     smb_share: logs
     log_path: pezzi.log
@@ -74,6 +70,7 @@ machines:
     #No pass di admin, no RDP per ora
 
   - id: DVK_asservimento_LR_MATE_200iD
+    connected: true
     smb_host: 10.0.0.224
     smb_share: logs
     log_path: pezzi.log
@@ -84,6 +81,7 @@ machines:
     nome_pezzo: inserimento_rubinetto_acqua_in_ottone
 
   - id: DVK_121120-886
+    connected: true
     smb_host: 10.0.0.222
     smb_share: logs
     log_path: pezzi.log
@@ -94,6 +92,7 @@ machines:
     nome_pezzo: filettatura_rubinetto_acqua_in_ottone
 
   - id: TORNOS_T1_Delta_1204
+    connected: false
     smb_host: 10.0.0.???
     smb_share: logs
     log_path: pezzi.log
@@ -104,6 +103,7 @@ machines:
     nome_pezzo: tornitura_asta_ottone
 
   - id: HYUNDAI_WIA_kit_450
+    connected: false
     smb_host: 10.0.0.???
     smb_share: logs
     log_path: pezzi.log
@@ -114,6 +114,7 @@ machines:
     nome_pezzo: tornitura_rondella_in_ottone
 
   - id: HYUNDAI_WIA_kit_4500
+    connected: false
     smb_host: 10.0.0.???
     smb_share: logs
     log_path: pezzi.log
@@ -124,6 +125,7 @@ machines:
     nome_pezzo: tornitura_chiavarda_in_ottone
 
   - id: SCHMALZ_jumboflex
+    connected: false
     smb_host: 10.0.0.???
     smb_share: logs
     log_path: pezzi.log
@@ -140,4 +142,3 @@ machines:
 
 
     
-

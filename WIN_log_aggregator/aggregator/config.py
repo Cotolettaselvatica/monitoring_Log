@@ -21,35 +21,17 @@ class DbSettings:
 @dataclass(frozen=True)
 class MachineSource:
     id: str
+    smb_host: str
+    smb_share: str
+    username: str
+    password: str
     nome_macchinario: str
     nome_pezzo: str
-    source_type: str = "smb"
-    # SMB
-    smb_host: str = ""
-    smb_share: str = ""
     log_path: str = ""
     log_dir: str = ""
     log_file_prefix: str = ""
     log_file_date_format: str = ""
-    username: str = ""
-    password: str = ""
     domain: str = ""
-    # MSSQL
-    mssql_host: str = ""
-    mssql_port: int = 1433
-    mssql_database: str = ""
-    mssql_user: str = ""
-    mssql_password: str = ""
-    mssql_table: str = ""
-    mssql_timestamp_column: str = ""
-    mssql_time_column: str = ""
-    mssql_id_column: str = ""
-    mssql_piece_column: str = ""
-    mssql_machine_column: str = ""
-    mssql_filter_column: str = ""
-    mssql_filter_value: str = ""
-    mssql_driver: str = "ODBC Driver 18 for SQL Server"
-    mssql_lookback_hours: int = 24
 
 
 @dataclass(frozen=True)
@@ -68,91 +50,6 @@ def _require(name: str) -> str:
     return value
 
 
-def _parse_machine(item: dict) -> MachineSource:
-    source_type = str(item.get("source_type", "smb")).strip().lower()
-    machine_id = str(item["id"])
-
-    common = dict(
-        id=machine_id,
-        nome_macchinario=str(item["nome_macchinario"]),
-        nome_pezzo=str(item["nome_pezzo"]),
-        source_type=source_type,
-    )
-
-    if source_type == "mssql":
-        missing = [
-            key
-            for key in (
-                "mssql_host",
-                "mssql_database",
-                "mssql_user",
-                "mssql_password",
-                "mssql_table",
-                "mssql_timestamp_column",
-            )
-            if not str(item.get(key, "") or "").strip()
-        ]
-        if missing:
-            raise ValueError(
-                f"Macchina {machine_id}: source_type mssql richiede {', '.join(missing)}"
-            )
-        return MachineSource(
-            **common,
-            mssql_host=str(item["mssql_host"]),
-            mssql_port=int(item.get("mssql_port", 1433)),
-            mssql_database=str(item["mssql_database"]),
-            mssql_user=str(item["mssql_user"]),
-            mssql_password=str(item["mssql_password"]),
-            mssql_table=str(item["mssql_table"]),
-            mssql_timestamp_column=str(item["mssql_timestamp_column"]),
-            mssql_time_column=str(item.get("mssql_time_column", "") or ""),
-            mssql_id_column=str(item.get("mssql_id_column", "") or ""),
-            mssql_piece_column=str(item.get("mssql_piece_column", "") or ""),
-            mssql_machine_column=str(item.get("mssql_machine_column", "") or ""),
-            mssql_filter_column=str(item.get("mssql_filter_column", "") or ""),
-            mssql_filter_value=str(item.get("mssql_filter_value", "") or ""),
-            mssql_driver=str(
-                item.get("mssql_driver", "ODBC Driver 18 for SQL Server")
-            ),
-            mssql_lookback_hours=int(item.get("mssql_lookback_hours", 24)),
-        )
-
-    if source_type != "smb":
-        raise ValueError(f"Macchina {machine_id}: source_type non supportato: {source_type}")
-
-    log_dir = str(item.get("log_dir", "") or "").strip().replace("\\", "/")
-    log_path = str(item.get("log_path", "") or "").strip().replace("\\", "/")
-    log_file_prefix = str(item.get("log_file_prefix", "") or "")
-    log_file_date_format = str(item.get("log_file_date_format", "") or "")
-
-    if log_dir:
-        if not log_file_date_format:
-            raise ValueError(
-                f"Macchina {machine_id}: log_dir richiede log_file_date_format"
-            )
-    elif not log_path:
-        raise ValueError(
-            f"Macchina {machine_id}: serve log_path oppure source_type mssql"
-        )
-
-    for key in ("smb_host", "smb_share", "username", "password"):
-        if not str(item.get(key, "") or "").strip():
-            raise ValueError(f"Macchina {machine_id}: campo SMB obbligatorio mancante: {key}")
-
-    return MachineSource(
-        **common,
-        smb_host=str(item["smb_host"]),
-        smb_share=str(item["smb_share"]),
-        log_path=log_path,
-        log_dir=log_dir,
-        log_file_prefix=log_file_prefix,
-        log_file_date_format=log_file_date_format,
-        username=str(item["username"]),
-        password=str(item["password"]),
-        domain=str(item.get("domain", "")),
-    )
-
-
 def _load_machines(config_path: Path) -> List[MachineSource]:
     with config_path.open(encoding="utf-8") as handle:
         raw = yaml.safe_load(handle)
@@ -161,7 +58,41 @@ def _load_machines(config_path: Path) -> List[MachineSource]:
     if not machines:
         raise ValueError(f"Nessuna macchina definita in {config_path}")
 
-    return [_parse_machine(item) for item in machines]
+    result: List[MachineSource] = []
+    for item in machines:
+        log_dir = str(item.get("log_dir", "") or "").strip().replace("\\", "/")
+        log_path = str(item.get("log_path", "") or "").strip().replace("\\", "/")
+        log_file_prefix = str(item.get("log_file_prefix", "") or "")
+        log_file_date_format = str(item.get("log_file_date_format", "") or "")
+
+        if log_dir:
+            if not log_file_date_format:
+                raise ValueError(
+                    f"Macchina {item.get('id')}: log_dir richiede log_file_date_format "
+                    "(es. '%d%m%y' per Trace_110626)"
+                )
+        elif not log_path:
+            raise ValueError(
+                f"Macchina {item.get('id')}: serve log_path oppure log_dir + log_file_date_format"
+            )
+
+        result.append(
+            MachineSource(
+                id=str(item["id"]),
+                smb_host=str(item["smb_host"]),
+                smb_share=str(item["smb_share"]),
+                log_path=log_path,
+                log_dir=log_dir,
+                log_file_prefix=log_file_prefix,
+                log_file_date_format=log_file_date_format,
+                username=str(item["username"]),
+                password=str(item["password"]),
+                nome_macchinario=str(item["nome_macchinario"]),
+                nome_pezzo=str(item["nome_pezzo"]),
+                domain=str(item.get("domain", "")),
+            )
+        )
+    return result
 
 
 def load_settings(

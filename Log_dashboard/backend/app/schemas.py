@@ -30,6 +30,17 @@ class Machine(BaseModel):
     imageUrl: Optional[str] = None
 
 
+class AggregatorMachine(BaseModel):
+    id: str
+    smbHost: str
+    connected: bool
+    username: Optional[str] = None
+    password: Optional[str] = None
+    domain: Optional[str] = None
+    nomeMacchinario: str
+    nomePezzo: str
+
+
 class MachineInput(BaseModel):
     name: str
     code: str

@@ -23,7 +23,18 @@ export interface Machine {
   imageUrl?: string;
 }
 
-/** Payload creazione / modifica macchinario (API). */
+/** Macchina Windows da WIN_log_aggregator (config YAML). */
+export interface AggregatorMachine {
+  id: string;
+  smbHost: string;
+  connected: boolean;
+  username?: string | null;
+  password?: string | null;
+  domain?: string | null;
+  nomeMacchinario: string;
+  nomePezzo: string;
+}
+
 export interface MachineInput {
   name: string;
   code: string;

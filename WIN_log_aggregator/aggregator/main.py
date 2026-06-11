@@ -4,9 +4,8 @@ import signal
 import sys
 import time
 
-from aggregator.config import MachineSource, load_settings
+from aggregator.config import load_settings
 from aggregator.db import PieceRepository
-from aggregator.mssql_reader import read_new_rows
 from aggregator.parser import OffsetStore
 from aggregator.smb_reader import read_new_lines, resolve_log_path
 
@@ -28,77 +27,34 @@ def stop_handler(signum, frame) -> None:
     running = False
 
 
-def _state_key(source: MachineSource) -> str:
-    if source.source_type == "mssql":
-        return f"{source.id}:mssql:{source.mssql_table}"
-    return f"{source.id}:{resolve_log_path(source)}"
-
-
-def _process_source(
-    source: MachineSource,
-    repository: PieceRepository,
-    offsets: OffsetStore,
-) -> int:
-    state_key = _state_key(source)
+def process_all_sources(settings, repository: PieceRepository, offsets: OffsetStore) -> int:
     imported = 0
 
-    if source.source_type == "mssql":
-        watermark = offsets.get(state_key, None)
-        if watermark == 0:
-            watermark = None
+    for source in settings.machines:
+        log_path = resolve_log_path(source)
+        offset_key = f"{source.id}:{log_path}"
+        start_offset = offsets.get(offset_key)
         try:
-            pieces, new_watermark = read_new_rows(source, watermark)
+            pieces, new_offset, log_path = read_new_lines(source, start_offset)
         except Exception:
-            logger.exception(
-                "Errore lettura MSSQL per sorgente %s (%s)",
-                source.id,
-                source.mssql_table,
-            )
-            return 0
+            logger.exception("Errore lettura SMB per sorgente %s (%s)", source.id, log_path)
+            continue
+
         for piece in pieces:
             if repository.insert_piece(piece, source.id):
                 imported += 1
-        if new_watermark != watermark:
-            offsets.set(state_key, new_watermark)
+
+        if new_offset != start_offset:
+            offsets.set(offset_key, new_offset)
             logger.info(
-                "Sorgente %s (%s): %s nuovi eventi, watermark %s -> %s",
+                "Sorgente %s (%s): %s nuove righe, offset %s -> %s",
                 source.id,
-                source.mssql_table,
+                log_path,
                 len(pieces),
-                watermark,
-                new_watermark,
+                start_offset,
+                new_offset,
             )
-        return imported
 
-    start_offset = int(offsets.get(state_key, 0))
-    log_path = resolve_log_path(source)
-    try:
-        pieces, new_offset, log_path = read_new_lines(source, start_offset)
-    except Exception:
-        logger.exception("Errore lettura SMB per sorgente %s (%s)", source.id, log_path)
-        return 0
-
-    for piece in pieces:
-        if repository.insert_piece(piece, source.id):
-            imported += 1
-
-    if new_offset != start_offset:
-        offsets.set(state_key, new_offset)
-        logger.info(
-            "Sorgente %s (%s): %s nuove righe, offset %s -> %s",
-            source.id,
-            log_path,
-            len(pieces),
-            start_offset,
-            new_offset,
-        )
-    return imported
-
-
-def process_all_sources(settings, repository: PieceRepository, offsets: OffsetStore) -> int:
-    imported = 0
-    for source in settings.machines:
-        imported += _process_source(source, repository, offsets)
     offsets.save()
     return imported
 

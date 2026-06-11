@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { machineService } from "@/services/machineService";
+import { aggregatorMachineService } from "@/services/aggregatorMachineService";
 import { logService } from "@/services/logService";
 import { noteService, type NewNoteInput } from "@/services/noteService";
 import { alertService } from "@/services/alertService";
@@ -26,6 +27,14 @@ export function useMachines() {
     queryKey: ["machines"],
     queryFn: () => machineService.list(),
     refetchInterval,
+  });
+}
+
+export function useAggregatorMachines() {
+  return useQuery({
+    queryKey: ["aggregator-machines"],
+    queryFn: () => aggregatorMachineService.list(),
+    staleTime: 60_000,
   });
 }
 

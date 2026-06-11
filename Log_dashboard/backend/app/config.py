@@ -20,6 +20,7 @@ class Settings:
     cors_origins: List[str]
     upload_dir: Path
     public_base_url: str
+    aggregator_machines_config: Path
 
 
 def _split_origins(value: str) -> List[str]:
@@ -28,9 +29,19 @@ def _split_origins(value: str) -> List[str]:
 
 def load_settings() -> Settings:
     backend_root = Path(__file__).resolve().parents[1]
+    repo_root = backend_root.parent.parent
     upload_dir = Path(os.getenv("UPLOAD_DIR", "uploads"))
     if not upload_dir.is_absolute():
         upload_dir = backend_root / upload_dir
+
+    aggregator_machines_config = Path(
+        os.getenv(
+            "AGGREGATOR_MACHINES_CONFIG",
+            str(repo_root / "WIN_log_aggregator" / "config" / "machines.example.yaml"),
+        )
+    )
+    if not aggregator_machines_config.is_absolute():
+        aggregator_machines_config = backend_root / aggregator_machines_config
 
     return Settings(
         db_host=os.getenv("DB_HOST", "localhost"),
@@ -45,4 +56,5 @@ def load_settings() -> Settings:
         ),
         upload_dir=upload_dir,
         public_base_url=os.getenv("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/"),
+        aggregator_machines_config=aggregator_machines_config,
     )

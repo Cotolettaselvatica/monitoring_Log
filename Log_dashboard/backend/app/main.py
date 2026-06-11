@@ -10,7 +10,15 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import load_settings
 from app.db import close_pool, init_pool, get_cursor
-from app.routers import charts, dashboard, logs, machines, metrics, vettasoft_proxy
+from app.routers import (
+    aggregator_machines,
+    charts,
+    dashboard,
+    logs,
+    machines,
+    metrics,
+    vettasoft_proxy,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +64,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(machines.router)
+    app.include_router(aggregator_machines.router)
     app.include_router(logs.router)
     app.include_router(charts.router)
     app.include_router(metrics.router)
