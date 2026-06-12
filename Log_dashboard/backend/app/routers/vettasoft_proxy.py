@@ -36,6 +36,15 @@ HOP_BY_HOP_HEADERS = frozenset(
 # Upstream caches static assets for 1 year; stale JS breaks proxied URL rewrites.
 CACHE_HEADERS = frozenset({"cache-control", "etag", "last-modified", "expires", "age"})
 
+# Known VettaSoft API path prefixes — do NOT use a broad `"/..."` rewrite:
+# it breaks regex literals like .replace(/"/g, ...) in utils.js / selectize / ace.
+_QUOTED_API_PATH = re.compile(r'(["\'])/(api/|widgets/)')
+_TEMPLATE_VAR_PATH = re.compile(r"`/\$\{(\w+)\}/")
+_CSS_URL_PATH = re.compile(
+    r"(\burl\(\s*[\"']?)/(static/|api/|widgets/)",
+    re.IGNORECASE,
+)
+
 _ROOT_RELATIVE_ATTRS = ("href", "action", "src", "formaction")
 _REDIRECT_INPUT = re.compile(
     r'(<input[^>]*type=["\']hidden["\'][^>]*value=["\'])(/)(["\'][^>]*name=["\']redirect["\'])',
@@ -54,6 +63,38 @@ _EMBED_JS = """<script data-vettasoft-embed="1">
 if(typeof jQuery!=="undefined"){jQuery(document).ajaxSend(function(_e,xhr){var key=apiKey();if(key)xhr.setRequestHeader("X-API-KEY",key);});}
 })();
 </script>"""
+
+_I18N_STUB = b"var i18n_strings = {};\n"
+
+
+def _replace_upstream_host(text: str) -> str:
+    text = text.replace(f"https://{UPSTREAM_HOST}/", f"{PROXY_PREFIX}/")
+    return text.replace(f"http://{UPSTREAM_HOST}/", f"{PROXY_PREFIX}/")
+
+
+def _rewrite_js_urls(text: str) -> str:
+    text = _replace_upstream_host(text)
+    text = _QUOTED_API_PATH.sub(rf"\1{PROXY_PREFIX}/\2", text)
+    return _TEMPLATE_VAR_PATH.sub(rf"`{PROXY_PREFIX}/${{\1}}/", text)
+
+
+def _rewrite_css_urls(text: str) -> str:
+    text = _replace_upstream_host(text)
+    return _CSS_URL_PATH.sub(rf"\1{PROXY_PREFIX}/\2", text)
+
+
+def _rewrite_html_urls(text: str) -> str:
+    text = _rewrite_js_urls(text)
+    for attr in _ROOT_RELATIVE_ATTRS:
+        text = re.sub(
+            rf'({attr}=["\'])/(?!vettasoft/)',
+            rf"\1{PROXY_PREFIX}/",
+            text,
+            flags=re.IGNORECASE,
+        )
+    text = _CSS_URL_PATH.sub(rf"\1{PROXY_PREFIX}/\2", text)
+    text = _REDIRECT_INPUT.sub(rf"\1{PROXY_PREFIX}/\3", text)
+    return _REDIRECT_INPUT_ALT.sub(rf"\1{PROXY_PREFIX}/\3", text)
 
 
 def _strip_proxy_prefix(path: str) -> str:
@@ -124,32 +165,6 @@ def _rewrite_set_cookie(value: str, *, client_https: bool) -> str:
     return "; ".join(kept)
 
 
-def _rewrite_text_urls(text: str) -> str:
-    text = text.replace(f"https://{UPSTREAM_HOST}/", f"{PROXY_PREFIX}/")
-    text = text.replace(f"http://{UPSTREAM_HOST}/", f"{PROXY_PREFIX}/")
-    for attr in _ROOT_RELATIVE_ATTRS:
-        text = re.sub(
-            rf'({attr}=["\'])/(?!vettasoft/)',
-            rf"\1{PROXY_PREFIX}/",
-            text,
-            flags=re.IGNORECASE,
-        )
-    # JS template literals: `/${prefix}/get_widgets/...`
-    text = re.sub(r"`/(?!vettasoft/)", f"`{PROXY_PREFIX}/", text)
-    # Quoted root paths: "/api/...", '/widgets/...'
-    text = re.sub(r'(["\'])/(?!vettasoft/)(?!/)', rf"\1{PROXY_PREFIX}/", text)
-    # CSS url(/static/...)
-    text = re.sub(
-        r"(\burl\(\s*[\"']?)/(?!vettasoft/)(?!/)",
-        rf"\1{PROXY_PREFIX}/",
-        text,
-        flags=re.IGNORECASE,
-    )
-    text = _REDIRECT_INPUT.sub(rf"\1{PROXY_PREFIX}/\3", text)
-    text = _REDIRECT_INPUT_ALT.sub(rf"\1{PROXY_PREFIX}/\3", text)
-    return text
-
-
 def _inject_embed_assets(html: str) -> str:
     if "data-vettasoft-embed" in html:
         return html
@@ -159,7 +174,7 @@ def _inject_embed_assets(html: str) -> str:
 
 
 def _rewrite_html(text: str) -> str:
-    text = _rewrite_text_urls(text)
+    text = _rewrite_html_urls(text)
     return _inject_embed_assets(text)
 
 
@@ -264,16 +279,31 @@ async def proxy_vettasoft(path: str, request: Request) -> Response:
 
     content = upstream.content
     content_type = upstream.headers.get("content-type", "")
-    if _should_rewrite_body(content_type, content):
+    i18n_stub = path == "api/i18n.js" and upstream.status_code == 401
+
+    if i18n_stub:
+        content = _I18N_STUB
+    elif _should_rewrite_body(content_type, content):
         text = content.decode("utf-8", errors="replace")
-        if "text/html" in content_type.lower():
+        lowered = content_type.lower()
+        if "text/html" in lowered:
             text = _rewrite_html(text)
-        else:
-            text = _rewrite_text_urls(text)
+        elif "javascript" in lowered:
+            text = _rewrite_js_urls(text)
+        elif "text/css" in lowered:
+            text = _rewrite_css_urls(text)
+        elif "application/json" in lowered:
+            text = _replace_upstream_host(text)
         content = text.encode("utf-8")
 
-    response = Response(content=content, status_code=upstream.status_code)
+    response = Response(
+        content=content,
+        status_code=200 if i18n_stub else upstream.status_code,
+        media_type="application/javascript; charset=utf-8" if i18n_stub else None,
+    )
     for key, value in _response_headers(upstream, client_https=client_https):
+        if i18n_stub and key.lower() in ("content-type", "content-length"):
+            continue
         if key.lower() == "set-cookie":
             response.headers.append("set-cookie", value)
         else:
