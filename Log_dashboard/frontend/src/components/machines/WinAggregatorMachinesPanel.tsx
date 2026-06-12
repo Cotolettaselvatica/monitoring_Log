@@ -68,8 +68,9 @@ export function WinAggregatorMachinesPanel() {
           </Box>
         ) : isError ? (
           <Alert severity="warning">
-            Impossibile caricare l&apos;elenco macchine dall&apos;API. Verificare{" "}
-            <code>AGGREGATOR_MACHINES_CONFIG</code> nel backend.
+            Impossibile caricare l&apos;elenco macchine RDP dall&apos;API{" "}
+            <code>/aggregator-machines</code>. Verificare che il backend sia avviato e che{" "}
+            <code>AGGREGATOR_MACHINES_CONFIG</code> punti al file YAML corretto.
           </Alert>
         ) : (
           <Grid container spacing={1.5}>

@@ -46,6 +46,14 @@ _REDIRECT_INPUT_ALT = re.compile(
     re.IGNORECASE,
 )
 _HEAD_CLOSE = re.compile(r"</head>", re.IGNORECASE)
+_BODY_CLOSE = re.compile(r"</body>", re.IGNORECASE)
+
+# jQuery hook: VettaSoft API richiede X-API-KEY (= session), ma session e' HttpOnly.
+_EMBED_JS = """<script data-vettasoft-embed="1">
+(function(){function apiKey(){var m=document.cookie.match(/(?:^|; )vettasoft_api_key=([^;]*)/);return m?decodeURIComponent(m[1]):"";}
+if(typeof jQuery!=="undefined"){jQuery(document).ajaxSend(function(_e,xhr){var key=apiKey();if(key)xhr.setRequestHeader("X-API-KEY",key);});}
+})();
+</script>"""
 
 
 def _strip_proxy_prefix(path: str) -> str:
@@ -78,6 +86,20 @@ def _session_from_cookie(cookie_header: str) -> str | None:
         if part.startswith("session="):
             return part[len("session="):]
     return None
+
+
+def _session_value_from_set_cookie(set_cookie: str) -> str | None:
+    first = set_cookie.split(";")[0].strip()
+    if not first.lower().startswith("session="):
+        return None
+    return first.split("=", 1)[1]
+
+
+def _companion_api_key_set_cookie(session_value: str, *, client_https: bool) -> str:
+    parts = [f"vettasoft_api_key={session_value}", "Path=/", "SameSite=Lax"]
+    if client_https:
+        parts.append("Secure")
+    return "; ".join(parts)
 
 
 def _rewrite_set_cookie(value: str, *, client_https: bool) -> str:
@@ -128,16 +150,17 @@ def _rewrite_text_urls(text: str) -> str:
     return text
 
 
-def _inject_embed_css(html: str) -> str:
+def _inject_embed_assets(html: str) -> str:
     if "data-vettasoft-embed" in html:
         return html
     link = f'<link rel="stylesheet" href="{EMBED_CSS_URL}" data-vettasoft-embed="1">'
-    return _HEAD_CLOSE.sub(f"{link}</head>", html, count=1)
+    html = _HEAD_CLOSE.sub(f"{link}</head>", html, count=1)
+    return _BODY_CLOSE.sub(f"{_EMBED_JS}</body>", html, count=1)
 
 
 def _rewrite_html(text: str) -> str:
     text = _rewrite_text_urls(text)
-    return _inject_embed_css(text)
+    return _inject_embed_assets(text)
 
 
 def _rewrite_form_body_to_upstream(body: bytes, content_type: str) -> bytes:
@@ -179,6 +202,12 @@ def _response_headers(upstream: httpx.Response, *, client_https: bool) -> Iterab
             yield key, _rewrite_location(value)
         elif lowered == "set-cookie":
             yield key, _rewrite_set_cookie(value, client_https=client_https)
+            session_value = _session_value_from_set_cookie(value)
+            if session_value is not None:
+                if session_value:
+                    yield key, _companion_api_key_set_cookie(session_value, client_https=client_https)
+                else:
+                    yield key, "vettasoft_api_key=; Path=/; Max-Age=0; SameSite=Lax"
         else:
             yield key, value
     yield "Cache-Control", "no-store, no-cache, must-revalidate"
@@ -214,7 +243,9 @@ async def proxy_vettasoft(path: str, request: Request) -> Response:
 
     # VettaSoft API expects X-API-KEY (= session); HttpOnly cookie is invisible to JS.
     if not any(k.lower() == "x-api-key" for k in forward_headers):
-        session = _session_from_cookie(request.headers.get("cookie", ""))
+        session = request.cookies.get("session") or _session_from_cookie(
+            request.headers.get("cookie", "")
+        )
         if session:
             forward_headers["X-API-KEY"] = session
 

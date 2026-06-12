@@ -13,6 +13,10 @@ export default defineConfig({
     port: 5173,
     open: true,
     proxy: {
+      "/aggregator-machines": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
       "/vettasoft": {
         target: "http://localhost:8000",
         changeOrigin: true,
