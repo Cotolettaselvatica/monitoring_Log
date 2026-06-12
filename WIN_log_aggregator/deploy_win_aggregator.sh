@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy WIN_log_aggregator su Rocky Linux
-# Uso: sudo ./deploy_win_aggregator.sh
+# Uso: sudo ./deploy_win_aggregator.sh [--refresh-machines-yaml]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,6 +8,15 @@ INSTALL_DIR="/opt/win-log-aggregator"
 ENV_FILE="/etc/win-log-aggregator.env"
 SERVICE_NAME="win-log-aggregator.service"
 SERVICE_USER="${SERVICE_USER:-logagg}"
+REFRESH_MACHINES_YAML=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --refresh-machines-yaml) REFRESH_MACHINES_YAML=1 ;;
+        *) die "Opzione sconosciuta: $1 (uso: sudo ./deploy_win_aggregator.sh [--refresh-machines-yaml])" ;;
+    esac
+    shift
+done
 
 log() { printf '[deploy] %s\n' "$*"; }
 die() { printf '[deploy] ERRORE: %s\n' "$*" >&2; exit 1; }
@@ -50,10 +59,21 @@ install_application() {
     mkdir -p "${INSTALL_DIR}/config" "${INSTALL_DIR}/state"
     cp -r "${SCRIPT_DIR}/aggregator" "${INSTALL_DIR}/"
     cp "${SCRIPT_DIR}/requirements.txt" "${INSTALL_DIR}/"
+    cp "${SCRIPT_DIR}/config/machines.example.yaml" "${INSTALL_DIR}/config/machines.example.yaml"
 
-    if [[ ! -f "${INSTALL_DIR}/config/machines.yaml" ]]; then
+    if [[ "$REFRESH_MACHINES_YAML" -eq 1 ]]; then
+        if [[ -f "${INSTALL_DIR}/config/machines.yaml" ]]; then
+            cp "${INSTALL_DIR}/config/machines.yaml" \
+                "${INSTALL_DIR}/config/machines.yaml.bak.$(date +%Y%m%d%H%M%S)"
+            log "Backup machines.yaml creato in ${INSTALL_DIR}/config/"
+        fi
+        cp "${SCRIPT_DIR}/config/machines.example.yaml" "${INSTALL_DIR}/config/machines.yaml"
+        log "machines.yaml aggiornato da machines.example.yaml (--refresh-machines-yaml)"
+    elif [[ ! -f "${INSTALL_DIR}/config/machines.yaml" ]]; then
         cp "${SCRIPT_DIR}/config/machines.example.yaml" "${INSTALL_DIR}/config/machines.yaml"
         log "Creato ${INSTALL_DIR}/config/machines.yaml (da configurare)"
+    else
+        log "machines.yaml esistente non sovrascritto (usa --refresh-machines-yaml per allineare all'example)"
     fi
 
     if [[ ! -d "${INSTALL_DIR}/.venv" ]]; then

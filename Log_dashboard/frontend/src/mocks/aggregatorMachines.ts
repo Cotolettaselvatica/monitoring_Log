@@ -33,7 +33,7 @@ export const mockAggregatorMachines: AggregatorMachine[] = [
     id: "Lasit_Rotomark_NP114459",
     smbHost: "10.0.0.236",
     connected: false,
-    nomeMacchinario: "Lasit_Mikromark_G3_NP115874",
+    nomeMacchinario: "Lasit_Rotomark_NP114459",
     nomePezzo: "incisione_laser_pulsante_ottone_cromato",
   },
   {

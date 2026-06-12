@@ -42,6 +42,17 @@ SKIP_FIREWALL=0
 log() { printf '[deploy] %s\n' "$*"; }
 die() { printf '[deploy] ERRORE: %s\n' "$*" >&2; exit 1; }
 
+ensure_env_var() {
+    local file="$1"
+    local key="$2"
+    local value="$3"
+    if grep -q "^${key}=" "$file" 2>/dev/null; then
+        return
+    fi
+    printf '\n%s=%s\n' "$key" "$value" >>"$file"
+    log "Aggiunto ${key} in ${file}"
+}
+
 usage() {
     sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
@@ -261,6 +272,7 @@ write_env_file() {
 
     if [[ -f "$ENV_FILE" ]]; then
         log "Config esistente: ${ENV_FILE} (non sovrascritto)"
+        ensure_env_var "$ENV_FILE" "AGGREGATOR_MACHINES_CONFIG" "/opt/win-log-aggregator/config/machines.yaml"
         return
     fi
 
@@ -279,9 +291,7 @@ CORS_ORIGINS=${web_base},http://127.0.0.1,http://localhost
 
 UPLOAD_DIR=${INSTALL_DIR}/backend/uploads
 PUBLIC_BASE_URL=${api_base}
-
-# Elenco macchine Windows per sezione RDP in /machines (opzionale)
-# AGGREGATOR_MACHINES_CONFIG=/opt/win-log-aggregator/config/machines.yaml
+AGGREGATOR_MACHINES_CONFIG=/opt/win-log-aggregator/config/machines.yaml
 EOF
     chmod 600 "$ENV_FILE"
     chown "${SERVICE_USER}:${SERVICE_USER}" "$ENV_FILE"

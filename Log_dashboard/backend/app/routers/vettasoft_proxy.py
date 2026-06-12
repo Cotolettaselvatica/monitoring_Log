@@ -65,9 +65,40 @@ def _rewrite_location(value: str) -> str:
     return value
 
 
-def _rewrite_set_cookie(value: str) -> str:
+def _client_is_https(request: Request) -> bool:
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    if forwarded:
+        return forwarded == "https"
+    return request.url.scheme == "https"
+
+
+def _session_from_cookie(cookie_header: str) -> str | None:
+    for part in cookie_header.split(";"):
+        part = part.strip()
+        if part.startswith("session="):
+            return part[len("session="):]
+    return None
+
+
+def _rewrite_set_cookie(value: str, *, client_https: bool) -> str:
     parts = [part.strip() for part in value.split(";") if part.strip()]
-    kept = [part for part in parts if not part.lower().startswith("domain=")]
+    kept: list[str] = []
+    has_samesite = False
+    for part in parts:
+        lower = part.lower()
+        if lower.startswith("domain="):
+            continue
+        # VettaSoft always marks session Secure; browsers reject that on plain HTTP
+        # except localhost — production (e.g. 172.20.x.x) needs Secure stripped.
+        if not client_https and lower == "secure":
+            continue
+        if not client_https and lower.startswith("samesite=none"):
+            part = "SameSite=Lax"
+        if lower.startswith("samesite="):
+            has_samesite = True
+        kept.append(part)
+    if not client_https and not has_samesite:
+        kept.append("SameSite=Lax")
     return "; ".join(kept)
 
 
@@ -139,7 +170,7 @@ def _should_rewrite_body(content_type: str, content: bytes) -> bool:
     return True
 
 
-def _response_headers(upstream: httpx.Response) -> Iterable[tuple[str, str]]:
+def _response_headers(upstream: httpx.Response, *, client_https: bool) -> Iterable[tuple[str, str]]:
     for key, value in upstream.headers.multi_items():
         lowered = key.lower()
         if lowered in HOP_BY_HOP_HEADERS or lowered in CACHE_HEADERS:
@@ -147,7 +178,7 @@ def _response_headers(upstream: httpx.Response) -> Iterable[tuple[str, str]]:
         if lowered == "location":
             yield key, _rewrite_location(value)
         elif lowered == "set-cookie":
-            yield key, _rewrite_set_cookie(value)
+            yield key, _rewrite_set_cookie(value, client_https=client_https)
         else:
             yield key, value
     yield "Cache-Control", "no-store, no-cache, must-revalidate"
@@ -171,6 +202,8 @@ async def proxy_vettasoft(path: str, request: Request) -> Response:
     if request.url.query:
         upstream_url = f"{upstream_url}?{request.url.query}"
 
+    client_https = _client_is_https(request)
+
     forward_headers: dict[str, str] = {}
     for key, value in request.headers.items():
         lowered = key.lower()
@@ -178,6 +211,12 @@ async def proxy_vettasoft(path: str, request: Request) -> Response:
             continue
         forward_headers[key] = value
     forward_headers["Host"] = UPSTREAM_HOST
+
+    # VettaSoft API expects X-API-KEY (= session); HttpOnly cookie is invisible to JS.
+    if not any(k.lower() == "x-api-key" for k in forward_headers):
+        session = _session_from_cookie(request.headers.get("cookie", ""))
+        if session:
+            forward_headers["X-API-KEY"] = session
 
     body = await request.body()
     request_content_type = request.headers.get("content-type", "")
@@ -203,7 +242,7 @@ async def proxy_vettasoft(path: str, request: Request) -> Response:
         content = text.encode("utf-8")
 
     response = Response(content=content, status_code=upstream.status_code)
-    for key, value in _response_headers(upstream):
+    for key, value in _response_headers(upstream, client_https=client_https):
         if key.lower() == "set-cookie":
             response.headers.append("set-cookie", value)
         else:
