@@ -4,7 +4,6 @@ __pycache__/
 *.pyc
 .DS_Store
 state/
-config/machines.yaml
 
 # Eccezione al gitignore globale (*.sql)
 !sql/

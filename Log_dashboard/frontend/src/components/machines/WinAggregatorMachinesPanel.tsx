@@ -59,7 +59,7 @@ export function WinAggregatorMachinesPanel() {
       <CardContent sx={{ p: { xs: 1.5, sm: 2.5 } }}>
         <SectionTitle
           title="Macchine RDP"
-          subtitle="Sorgenti SMB da WIN_log_aggregator — clic per avviare RDP nativo"
+          subtitle="Sorgenti da WIN_log_aggregator/config/machines.yaml — clic per avviare RDP nativo"
         />
 
         {isLoading ? (

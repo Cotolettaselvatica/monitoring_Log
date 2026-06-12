@@ -56,10 +56,12 @@ EOF
 install_application() {
     log "Installo applicazione in ${INSTALL_DIR}..."
 
+    local repo_machines="${SCRIPT_DIR}/config/machines.yaml"
+    [[ -f "$repo_machines" ]] || die "Manca ${repo_machines} nel repository"
+
     mkdir -p "${INSTALL_DIR}/config" "${INSTALL_DIR}/state"
     cp -r "${SCRIPT_DIR}/aggregator" "${INSTALL_DIR}/"
     cp "${SCRIPT_DIR}/requirements.txt" "${INSTALL_DIR}/"
-    cp "${SCRIPT_DIR}/config/machines.example.yaml" "${INSTALL_DIR}/config/machines.example.yaml"
 
     if [[ "$REFRESH_MACHINES_YAML" -eq 1 ]]; then
         if [[ -f "${INSTALL_DIR}/config/machines.yaml" ]]; then
@@ -67,13 +69,13 @@ install_application() {
                 "${INSTALL_DIR}/config/machines.yaml.bak.$(date +%Y%m%d%H%M%S)"
             log "Backup machines.yaml creato in ${INSTALL_DIR}/config/"
         fi
-        cp "${SCRIPT_DIR}/config/machines.example.yaml" "${INSTALL_DIR}/config/machines.yaml"
-        log "machines.yaml aggiornato da machines.example.yaml (--refresh-machines-yaml)"
+        cp "$repo_machines" "${INSTALL_DIR}/config/machines.yaml"
+        log "machines.yaml aggiornato da config/machines.yaml del repo (--refresh-machines-yaml)"
     elif [[ ! -f "${INSTALL_DIR}/config/machines.yaml" ]]; then
-        cp "${SCRIPT_DIR}/config/machines.example.yaml" "${INSTALL_DIR}/config/machines.yaml"
-        log "Creato ${INSTALL_DIR}/config/machines.yaml (da configurare)"
+        cp "$repo_machines" "${INSTALL_DIR}/config/machines.yaml"
+        log "Creato ${INSTALL_DIR}/config/machines.yaml da config/machines.yaml del repo"
     else
-        log "machines.yaml esistente non sovrascritto (usa --refresh-machines-yaml per allineare all'example)"
+        log "machines.yaml esistente non sovrascritto (usa --refresh-machines-yaml per allineare al repo)"
     fi
 
     if [[ ! -d "${INSTALL_DIR}/.venv" ]]; then

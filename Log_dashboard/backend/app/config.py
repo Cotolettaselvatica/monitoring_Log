@@ -7,6 +7,9 @@ import os
 
 load_dotenv()
 
+MACHINES_YAML_REL = Path("WIN_log_aggregator") / "config" / "machines.yaml"
+PROD_MACHINES_YAML = Path("/opt/win-log-aggregator/config/machines.yaml")
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -27,24 +30,31 @@ def _split_origins(value: str) -> List[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
+def _find_monorepo_machines_yaml(backend_root: Path) -> Path | None:
+    """Cerca WIN_log_aggregator/config/machines.yaml risalendo l'albero (sviluppo)."""
+    for base in backend_root.parents:
+        candidate = base / MACHINES_YAML_REL
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _default_aggregator_machines_config(backend_root: Path) -> Path:
     env_path = os.getenv("AGGREGATOR_MACHINES_CONFIG")
     if env_path:
         path = Path(env_path)
         if not path.is_absolute():
-            path = backend_root / path
+            path = (backend_root / path).resolve()
         return path
 
-    prod_yaml = Path("/opt/win-log-aggregator/config/machines.yaml")
-    if prod_yaml.is_file():
-        return prod_yaml
+    if PROD_MACHINES_YAML.is_file():
+        return PROD_MACHINES_YAML
 
-    repo_root = backend_root.parent.parent
-    example_yaml = repo_root / "WIN_log_aggregator" / "config" / "machines.example.yaml"
-    if example_yaml.is_file():
-        return example_yaml
+    monorepo_yaml = _find_monorepo_machines_yaml(backend_root)
+    if monorepo_yaml:
+        return monorepo_yaml
 
-    return prod_yaml
+    return PROD_MACHINES_YAML
 
 
 def load_settings() -> Settings:

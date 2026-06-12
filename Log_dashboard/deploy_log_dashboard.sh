@@ -53,6 +53,30 @@ ensure_env_var() {
     log "Aggiunto ${key} in ${file}"
 }
 
+fix_aggregator_machines_env() {
+    local file="$1"
+    local expected="/opt/win-log-aggregator/config/machines.yaml"
+    [[ -f "$file" ]] || return 0
+
+    if grep -q "^AGGREGATOR_MACHINES_CONFIG=" "$file" 2>/dev/null; then
+        local current
+        current="$(grep "^AGGREGATOR_MACHINES_CONFIG=" "$file" | tail -1 | cut -d= -f2-)"
+        if [[ "$current" == "$expected" ]]; then
+            return 0
+        fi
+        if [[ ! -f "$current" ]] \
+            || [[ "$current" == *"/opt/WIN_log_aggregator/"* ]] \
+            || [[ "$current" == *"machines.example.yaml"* ]]; then
+            sed -i '/^AGGREGATOR_MACHINES_CONFIG=/d' "$file"
+            printf '\nAGGREGATOR_MACHINES_CONFIG=%s\n' "$expected" >>"$file"
+            log "Corretto AGGREGATOR_MACHINES_CONFIG in ${file} -> ${expected}"
+        fi
+        return 0
+    fi
+
+    ensure_env_var "$file" "AGGREGATOR_MACHINES_CONFIG" "$expected"
+}
+
 usage() {
     sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
@@ -272,7 +296,7 @@ write_env_file() {
 
     if [[ -f "$ENV_FILE" ]]; then
         log "Config esistente: ${ENV_FILE} (non sovrascritto)"
-        ensure_env_var "$ENV_FILE" "AGGREGATOR_MACHINES_CONFIG" "/opt/win-log-aggregator/config/machines.yaml"
+        fix_aggregator_machines_env "$ENV_FILE"
         return
     fi
 
