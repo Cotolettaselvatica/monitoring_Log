@@ -5,7 +5,7 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import WarningIcon from "@mui/icons-material/Warning";
 import HistoryIcon from "@mui/icons-material/History";
 import dayjs from "dayjs";
-import { useMachines, useLogs, useFleetMetrics } from "@/hooks/useData";
+import { useMachines, useLogs, useFleetMetrics, useAggregatorMachines } from "@/hooks/useData";
 import { useChartSeries } from "@/hooks/useChartSeries";
 import { defaultPageFilters, type PageFilterState } from "@/utils/filters";
 import { KpiCard } from "@/components/common/KpiCard";
@@ -20,10 +20,11 @@ import { LoadingState } from "@/components/common/LoadingState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionTitle } from "@/components/layout/SectionTitle";
 import { catisColors } from "@/theme/catisTheme";
-import type { MachineStatus } from "@/types";
+import { fleetStatusSummary } from "@/utils/fleetStatus";
 
 export default function DashboardPage() {
   const { data: machines = [], isLoading, isError } = useMachines();
+  const { data: aggregatorMachines = [] } = useAggregatorMachines();
   const { data: logs = [], dataUpdatedAt: logsUpdatedAt } = useLogs();
   const { data: fleetMetrics } = useFleetMetrics(7);
   const hourly = useChartSeries("hour");
@@ -33,21 +34,20 @@ export default function DashboardPage() {
   const yearly = useChartSeries("year");
   const [filters, setFilters] = useState<PageFilterState>(defaultPageFilters);
 
-  const kpis = useMemo(() => ({
-    total: machines.length,
-    online: machines.filter((m) => m.status === "online").length,
-    offline: machines.filter((m) => m.status === "offline").length,
-    warning: machines.filter((m) => m.status === "warning" || m.status === "error").length,
-    events24h: logs.filter((l) => dayjs(l.timestamp).isAfter(dayjs().subtract(24, "hour"))).length,
-  }), [machines, logs]);
+  const fleetStatus = useMemo(
+    () => fleetStatusSummary(machines, aggregatorMachines),
+    [machines, aggregatorMachines],
+  );
 
-  const statusData = useMemo(() => {
-    const counts: Record<MachineStatus, number> = { online: 0, offline: 0, warning: 0, error: 0 };
-    machines.forEach((m) => { counts[m.status] += 1; });
-    return (Object.entries(counts) as [MachineStatus, number][])
-      .filter(([, c]) => c > 0)
-      .map(([status, count]) => ({ status, count }));
-  }, [machines]);
+  const kpis = useMemo(() => ({
+    total: fleetStatus.total,
+    online: fleetStatus.online,
+    offline: fleetStatus.offline,
+    warning: fleetStatus.warning,
+    events24h: logs.filter((l) => dayjs(l.timestamp).isAfter(dayjs().subtract(24, "hour"))).length,
+  }), [fleetStatus, logs]);
+
+  const statusData = fleetStatus.statusData;
 
   if (isLoading) return <LoadingState />;
   if (isError) return <Alert severity="error">Errore nel caricamento dei macchinari</Alert>;

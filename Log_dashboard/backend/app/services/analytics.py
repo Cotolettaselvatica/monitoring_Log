@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from app.schemas import ChartSeriesPoint, FleetMetrics, MachineMetrics
+from app.services.aggregator_machines import list_aggregator_machines
 from app.services.machines import get_machine, get_nome_macchinario, list_machines
 from app.services.pieces import activity_stats, bucket_counts, production_since
-from app.services.utils import offline_threshold_min
 
 
 def _period_label(days: int) -> str:
@@ -88,8 +88,13 @@ def chart_series(
 def fleet_metrics(period_days: int = 7) -> FleetMetrics:
     since = datetime.now(timezone.utc) - timedelta(days=period_days)
     machines = list_machines()
-    threshold = offline_threshold_min()
+    try:
+        aggregator_machines = list_aggregator_machines()
+    except (FileNotFoundError, OSError):
+        aggregator_machines = []
     online = sum(1 for m in machines if m.status == "online")
+    online += sum(1 for m in aggregator_machines if m.connected)
+    total = len(machines) + len(aggregator_machines)
     total_events = activity_stats(since)["event_count"] or 0
     total_minutes = period_days * 24 * 60
     active_minutes = min(total_minutes, int(total_events) * 2)
@@ -103,7 +108,7 @@ def fleet_metrics(period_days: int = 7) -> FleetMetrics:
         mttrMinutes=None,
         failures=0,
         machinesOnline=online,
-        machinesTotal=len(machines),
+        machinesTotal=total,
     )
 
 
