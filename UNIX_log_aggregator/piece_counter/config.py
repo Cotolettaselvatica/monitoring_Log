@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 class Settings:
     nome_macchinario: str
     nome_pezzo: str
+    nome_pezzo_secondario: str | None
+    pezzo_secondario_ogni_n: int
     db_host: str
     db_port: int
     db_name: str
@@ -16,6 +18,10 @@ class Settings:
     gpio_pin: int
     gpio_idle: str
     debounce_ms: int
+
+    @property
+    def pezzo_secondario_abilitato(self) -> bool:
+        return self.pezzo_secondario_ogni_n > 0 and bool(self.nome_pezzo_secondario)
 
 
 def _require(name: str) -> str:
@@ -44,9 +50,11 @@ def load_settings(env_file: str | None = None) -> Settings:
         load_dotenv(os.getenv("PIECE_COUNTER_ENV", "/etc/piece-counter.env"))
         load_dotenv()
 
-    return Settings(
+    settings = Settings(
         nome_macchinario=_require("NOME_MACCHINARIO"),
         nome_pezzo=_require("NOME_PEZZO"),
+        nome_pezzo_secondario=os.getenv("NOME_PEZZO_SECONDARIO", "").strip() or None,
+        pezzo_secondario_ogni_n=int(os.getenv("PEZZO_SECONDARIO_OGNI_N", "0")),
         db_host=os.getenv("DB_HOST", "localhost"),
         db_port=int(os.getenv("DB_PORT", "5432")),
         db_name=_require("DB_NAME"),
@@ -56,3 +64,12 @@ def load_settings(env_file: str | None = None) -> Settings:
         gpio_idle=_parse_gpio_idle(os.getenv("GPIO_IDLE", "high")),
         debounce_ms=int(os.getenv("DEBOUNCE_MS", "200")),
     )
+
+    if settings.pezzo_secondario_ogni_n < 0:
+        raise ValueError("PEZZO_SECONDARIO_OGNI_N deve essere >= 0 (0 = disabilitato)")
+    if settings.pezzo_secondario_ogni_n > 0 and not settings.nome_pezzo_secondario:
+        raise ValueError(
+            "PEZZO_SECONDARIO_OGNI_N > 0 richiede NOME_PEZZO_SECONDARIO in configurazione"
+        )
+
+    return settings

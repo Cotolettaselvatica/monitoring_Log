@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import RPi.GPIO as GPIO
 
-from piece_counter.config import load_settings
+from piece_counter.config import Settings, load_settings
 from piece_counter.db import PieceRepository
 
 logger = logging.getLogger(__name__)
@@ -31,18 +31,31 @@ def stop_handler(signum, frame) -> None:
 def on_piece_detected(
     channel: int,
     repository: PieceRepository,
-    nome_macchinario: str,
-    nome_pezzo: str,
+    settings: Settings,
+    state: dict[str, int],
 ) -> None:
     ts = datetime.now(timezone.utc)
+    state["count"] += 1
     logger.info("Pezzo rilevato su GPIO %s alle %s", channel, ts.isoformat())
     try:
         repository.insert_piece(ts)
         logger.info(
             "Insert completata: macchinario=%s pezzo=%s",
-            nome_macchinario,
-            nome_pezzo,
+            settings.nome_macchinario,
+            settings.nome_pezzo,
         )
+        if (
+            settings.pezzo_secondario_abilitato
+            and state["count"] % settings.pezzo_secondario_ogni_n == 0
+        ):
+            repository.insert_piece(ts, nome_pezzo=settings.nome_pezzo_secondario)
+            logger.info(
+                "Insert pezzo secondario: macchinario=%s pezzo=%s (ogni %s pezzi, conteggio=%s)",
+                settings.nome_macchinario,
+                settings.nome_pezzo_secondario,
+                settings.pezzo_secondario_ogni_n,
+                state["count"],
+            )
     except Exception:
         logger.exception("Impossibile registrare il pezzo su PostgreSQL")
 
@@ -100,11 +113,12 @@ def main() -> int:
         return 1
 
     gpio_pin = settings.gpio_pin
+    piece_state = {"count": 0}
     callback = lambda channel: on_piece_detected(
         channel,
         repository,
-        settings.nome_macchinario,
-        settings.nome_pezzo,
+        settings,
+        piece_state,
     )
 
     try:
@@ -123,6 +137,12 @@ def main() -> int:
         settings.gpio_idle,
         edge_label,
     )
+    if settings.pezzo_secondario_abilitato:
+        logger.info(
+            "Pezzo secondario attivo: %s ogni %s pezzi",
+            settings.nome_pezzo_secondario,
+            settings.pezzo_secondario_ogni_n,
+        )
 
     try:
         poll_edges(gpio_pin, settings.debounce_ms, settings.gpio_idle, callback)

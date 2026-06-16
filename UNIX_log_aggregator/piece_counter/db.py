@@ -36,35 +36,28 @@ class PieceRepository:
         if self._conn is None or self._conn.closed:
             self.connect()
 
-    def insert_piece(self, timestamp: datetime | None = None) -> None:
+    def insert_piece(
+        self,
+        timestamp: datetime | None = None,
+        *,
+        nome_pezzo: str | None = None,
+    ) -> None:
         ts = timestamp or datetime.now(timezone.utc)
+        pezzo = nome_pezzo or self._settings.nome_pezzo
         query = sql.SQL(
             """
             INSERT INTO conteggi_pezzi (nome_macchinario, nome_pezzo, timestamp)
             VALUES (%s, %s, %s)
             """
         )
+        params = (self._settings.nome_macchinario, pezzo, ts)
 
         try:
             self.ensure_connected()
             with self._conn.cursor() as cur:
-                cur.execute(
-                    query,
-                    (
-                        self._settings.nome_macchinario,
-                        self._settings.nome_pezzo,
-                        ts,
-                    ),
-                )
+                cur.execute(query, params)
         except psycopg2.Error:
             logger.exception("Errore durante l'insert, tentativo di riconnessione")
             self.connect()
             with self._conn.cursor() as cur:
-                cur.execute(
-                    query,
-                    (
-                        self._settings.nome_macchinario,
-                        self._settings.nome_pezzo,
-                        ts,
-                    ),
-                )
+                cur.execute(query, params)
