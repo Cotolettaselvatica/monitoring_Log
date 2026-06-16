@@ -8,48 +8,86 @@ from app.schemas import LogEntry
 from app.services.utils import iso
 
 
-def _row_to_log(row: dict[str, Any], machine_id: str) -> LogEntry:
+def _table_exists(name: str) -> bool:
+    row = db.fetch_one(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = %s
+        ) AS ok
+        """,
+        (name,),
+    )
+    return bool(row and row["ok"])
+
+
+def _row_to_log_entry(row: dict[str, Any]) -> LogEntry:
     return LogEntry(
-        id=f"l-{row['id']}",
-        machineId=machine_id,
+        id=row["id"],
+        machineId=row["machine_id"],
         timestamp=iso(row["timestamp"]),
-        action="PIECE_COUNT",
-        level="info",
-        message=f"Pezzo prodotto: {row['nome_pezzo']}",
-        user="sistema",
+        action=row["action"],
+        level=row["level"],
+        message=row["message"],
+        user=row["user"],
     )
 
 
-def list_logs(limit: int = 500, machine_nome: str | None = None) -> list[LogEntry]:
+def _logs_union_sql(machine_nome: str | None = None) -> tuple[str, list[Any]]:
+    params: list[Any] = []
+    piece_where = ""
+    ping_where = ""
     if machine_nome:
-        rows = db.fetch_all(
-            """
-            SELECT cp.id, cp.nome_macchinario, cp.nome_pezzo, cp.timestamp, dm.id AS machine_id
-            FROM conteggi_pezzi cp
-            LEFT JOIN dashboard_macchinari dm ON dm.nome_macchinario = cp.nome_macchinario
-            WHERE cp.nome_macchinario = %s
-            ORDER BY cp.timestamp DESC
-            LIMIT %s
-            """,
-            (machine_nome, limit),
-        )
-    else:
-        rows = db.fetch_all(
-            """
-            SELECT cp.id, cp.nome_macchinario, cp.nome_pezzo, cp.timestamp, dm.id AS machine_id
-            FROM conteggi_pezzi cp
-            LEFT JOIN dashboard_macchinari dm ON dm.nome_macchinario = cp.nome_macchinario
-            ORDER BY cp.timestamp DESC
-            LIMIT %s
-            """,
-            (limit,),
-        )
+        piece_where = "WHERE cp.nome_macchinario = %s"
+        ping_where = "WHERE pc.nome_macchinario = %s"
+        params.extend([machine_nome, machine_nome])
 
-    logs: list[LogEntry] = []
-    for row in rows:
-        machine_id = row.get("machine_id") or row["nome_macchinario"]
-        logs.append(_row_to_log(row, machine_id))
-    return logs
+    ping_union = ""
+    if _table_exists("ping_checks"):
+        ping_union = f"""
+            UNION ALL
+            SELECT
+                'ping-' || pc.id::text AS id,
+                COALESCE(dm2.id, pc.nome_macchinario) AS machine_id,
+                pc.timestamp,
+                'PING_CHECK' AS action,
+                CASE WHEN pc.reachable THEN 'info' ELSE 'error' END AS level,
+                CASE WHEN pc.reachable
+                    THEN 'Ping OK (' || pc.ip || ')'
+                    ELSE 'Ping fallito (' || pc.ip || ')'
+                END AS message,
+                'sistema' AS user
+            FROM ping_checks pc
+            LEFT JOIN dashboard_macchinari dm2 ON dm2.nome_macchinario = pc.nome_macchinario
+            {ping_where}
+        """
+
+    sql = f"""
+        SELECT * FROM (
+            SELECT
+                'p-' || cp.id::text AS id,
+                COALESCE(dm.id, cp.nome_macchinario) AS machine_id,
+                cp.timestamp,
+                'PIECE_COUNT' AS action,
+                'info'::text AS level,
+                ('Pezzo prodotto: ' || cp.nome_pezzo) AS message,
+                'sistema' AS user
+            FROM conteggi_pezzi cp
+            LEFT JOIN dashboard_macchinari dm ON dm.nome_macchinario = cp.nome_macchinario
+            {piece_where}
+            {ping_union}
+        ) combined
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """
+    return sql, params
+
+
+def list_logs(limit: int = 2000, machine_nome: str | None = None) -> list[LogEntry]:
+    sql, params = _logs_union_sql(machine_nome)
+    rows = db.fetch_all(sql, (*params, limit))
+    return [_row_to_log_entry(row) for row in rows]
 
 
 def list_logs_for_machine_id(machine_id: str, limit: int = 500) -> list[LogEntry]:
@@ -133,6 +171,21 @@ def distinct_machines_from_production() -> list[dict[str, Any]]:
                MAX(timestamp) AS last_seen,
                COUNT(*) AS total_pieces
         FROM conteggi_pezzi
+        GROUP BY nome_macchinario
+        ORDER BY nome_macchinario
+        """
+    )
+
+
+def distinct_machines_from_pings() -> list[dict[str, Any]]:
+    if not _table_exists("ping_checks"):
+        return []
+    return db.fetch_all(
+        """
+        SELECT nome_macchinario,
+               MAX(timestamp) AS last_seen,
+               0 AS total_pieces
+        FROM ping_checks
         GROUP BY nome_macchinario
         ORDER BY nome_macchinario
         """

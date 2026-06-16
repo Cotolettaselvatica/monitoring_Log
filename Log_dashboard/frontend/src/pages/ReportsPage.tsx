@@ -149,7 +149,7 @@ export default function ReportsPage() {
     <Box>
       <PageHeader
         title="Reportistica"
-        subtitle="Esportazione dati in PDF, Excel, CSV e JSON — vista standard o pivot"
+        subtitle="Esportazione dati in PDF, Excel, CSV e JSON — conteggi pezzi, ping di rete, vista standard o pivot"
       />
 
       <Alert severity="info" sx={{ mb: 2 }}>

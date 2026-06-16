@@ -30,7 +30,7 @@ export default function LogsPage() {
     <>
       <PageHeader
         title="Log interconnessione"
-        subtitle="Consultazione avanzata con filtri, timestamp e analisi pivot"
+        subtitle="Consultazione avanzata con filtri, conteggi pezzi, ping di rete e analisi pivot"
       />
 
       <FilterBar

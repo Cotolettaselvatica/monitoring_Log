@@ -33,7 +33,7 @@ class Machine(BaseModel):
 class AggregatorMachine(BaseModel):
     id: str
     smbHost: str
-    connected: bool
+    rdpEnabled: bool
     username: Optional[str] = None
     password: Optional[str] = None
     domain: Optional[str] = None

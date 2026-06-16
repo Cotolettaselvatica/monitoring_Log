@@ -93,7 +93,7 @@ def fleet_metrics(period_days: int = 7) -> FleetMetrics:
     except (FileNotFoundError, OSError):
         aggregator_machines = []
     online = sum(1 for m in machines if m.status == "online")
-    online += sum(1 for m in aggregator_machines if m.connected)
+    online += sum(1 for m in aggregator_machines if m.rdpEnabled)
     total = len(machines) + len(aggregator_machines)
     total_events = activity_stats(since)["event_count"] or 0
     total_minutes = period_days * 24 * 60

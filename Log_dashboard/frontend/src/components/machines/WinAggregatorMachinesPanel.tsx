@@ -29,7 +29,7 @@ export function WinAggregatorMachinesPanel() {
   const [snackbar, setSnackbar] = useState<string | null>(null);
 
   const handleConnect = async (machine: AggregatorMachine) => {
-    if (!machine.connected) return;
+    if (!machine.rdpEnabled) return;
     if (!machine.username || !machine.password) {
       setSnackbar("Credenziali RDP non configurate per questa macchina.");
       return;
@@ -75,8 +75,8 @@ export function WinAggregatorMachinesPanel() {
         ) : (
           <Grid container spacing={1.5}>
             {machines.map((machine) => {
-              const offline = !machine.connected;
-              const clickable = machine.connected && isValidRdpHost(machine.smbHost);
+              const offline = !machine.rdpEnabled;
+              const clickable = machine.rdpEnabled && isValidRdpHost(machine.smbHost);
 
               const cardBody = (
                 <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
@@ -105,7 +105,7 @@ export function WinAggregatorMachinesPanel() {
                   <Typography variant="body2" color="text.secondary" sx={{ minHeight: 40 }}>
                     {formatPezzoLabel(machine.nomePezzo)}
                   </Typography>
-                  {machine.connected && machine.username && (
+                  {machine.rdpEnabled && machine.username && (
                     <Typography variant="caption" color="text.secondary">
                       Utente: {machine.domain ? `${machine.domain}\\${machine.username}` : machine.username}
                     </Typography>

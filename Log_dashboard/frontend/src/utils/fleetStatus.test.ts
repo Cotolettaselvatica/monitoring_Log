@@ -14,16 +14,16 @@ const dbMachine = (status: Machine["status"]): Machine => ({
   interconnected: true,
 });
 
-const rdpMachine = (connected: boolean): AggregatorMachine => ({
+const rdpMachine = (rdpEnabled: boolean): AggregatorMachine => ({
   id: "rdp-1",
   smbHost: "10.0.0.2",
-  connected,
+  rdpEnabled,
   nomeMacchinario: "RDP Test",
   nomePezzo: "pezzo",
 });
 
 describe("fleetStatusSummary", () => {
-  it("combina stati DB e connected RDP", () => {
+  it("combina stati DB e rdpEnabled RDP", () => {
     const summary = fleetStatusSummary(
       [dbMachine("online"), dbMachine("offline")],
       [rdpMachine(true), rdpMachine(false)],

@@ -35,7 +35,7 @@ ensure_service_user() {
 
 install_packages() {
     log "Installo pacchetti di sistema..."
-    dnf install -y python3 python3-pip
+    dnf install -y python3 python3-pip iputils
 }
 
 install_start_script() {

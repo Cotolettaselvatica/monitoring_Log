@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from app import db
 from app.config import load_settings
 from app.schemas import Machine, MachineInput, MachineStatus
-from app.services.pieces import distinct_machines_from_production
+from app.services.pieces import distinct_machines_from_pings, distinct_machines_from_production
 from app.services.utils import (
     compute_status,
     get_settings_row,
@@ -22,6 +22,11 @@ def _default_name(nome: str) -> str:
 
 def sync_discovered_machines() -> None:
     discovered = distinct_machines_from_production()
+    known = {row["nome_macchinario"] for row in discovered}
+    for row in distinct_machines_from_pings():
+        if row["nome_macchinario"] not in known:
+            discovered.append(row)
+            known.add(row["nome_macchinario"])
     for row in discovered:
         nome = row["nome_macchinario"]
         existing = db.fetch_one(

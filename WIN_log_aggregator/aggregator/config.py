@@ -32,6 +32,7 @@ class MachineSource:
     log_file_prefix: str = ""
     log_file_date_format: str = ""
     domain: str = ""
+    pingable: bool = False
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ class AggregatorSettings:
     db: DbSettings
     machines: List[MachineSource]
     poll_interval_sec: int
+    ping_interval_sec: int
     state_file: Path
     machines_config: Path
 
@@ -90,6 +92,7 @@ def _load_machines(config_path: Path) -> List[MachineSource]:
                 nome_macchinario=str(item["nome_macchinario"]),
                 nome_pezzo=str(item["nome_pezzo"]),
                 domain=str(item.get("domain", "")),
+                pingable=bool(item.get("pingable", False)),
             )
         )
     return result
@@ -126,6 +129,7 @@ def load_settings(
         ),
         machines=_load_machines(machines_config),
         poll_interval_sec=int(os.getenv("POLL_INTERVAL_SEC", "30")),
+        ping_interval_sec=int(os.getenv("PING_INTERVAL_SEC", "1")),
         state_file=state_file,
         machines_config=machines_config,
     )

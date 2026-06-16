@@ -20,7 +20,7 @@ export function fleetStatusSummary(
   });
 
   aggregatorMachines.forEach((m) => {
-    counts[m.connected ? "online" : "offline"] += 1;
+    counts[m.rdpEnabled ? "online" : "offline"] += 1;
   });
 
   return {

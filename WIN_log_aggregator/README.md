@@ -96,6 +96,27 @@ Usa la stessa tabella `conteggi_pezzi` dei Raspberry (definita in `UNIX_log_aggr
 
 La deduplica delle righe importate e' gestita dagli **offset byte** in `state/offsets.json`, non dal database.
 
+### Tabella `ping_checks` (reachability)
+
+Monitoraggio ICMP parallelo al polling SMB: ogni `PING_INTERVAL_SEC` (default **1 s**) l'aggregator fa ping alle macchine con `pingable: true` in `machines.yaml` e registra **ogni tentativo** (successo o fallimento):
+
+| Colonna | Descrizione |
+|---------|-------------|
+| `id` | Chiave primaria |
+| `nome_macchinario` | Nome macchina (da YAML) |
+| `ip` | Host pingato (`smb_host`) |
+| `reachable` | `true` se il ping ha risposto, `false` se fallito o timeout |
+| `timestamp` | Istante del controllo (UTC) |
+
+Schema in `sql/schema.sql`; la tabella viene creata/aggiornata anche automaticamente all'avvio se mancante.
+
+```sql
+SELECT nome_macchinario, ip, reachable, timestamp
+FROM ping_checks
+ORDER BY timestamp DESC
+LIMIT 20;
+```
+
 ### Utente
 
 Usa lo stesso utente `counter` creato da `UNIX_log_aggregator/sql/setup-postgres.sh`.
@@ -129,6 +150,7 @@ DB_PASSWORD=CatisPg2026
 MACHINES_CONFIG=config/machines.yaml
 STATE_FILE=state/offsets.json
 POLL_INTERVAL_SEC=30
+PING_INTERVAL_SEC=1
 ```
 
 | Variabile | Default | Descrizione |
@@ -140,7 +162,8 @@ POLL_INTERVAL_SEC=30
 | `DB_PASSWORD` | — | Password PostgreSQL |
 | `MACHINES_CONFIG` | `config/machines.yaml` | Elenco macchinari SMB |
 | `STATE_FILE` | `state/offsets.json` | Offset lettura per sorgente |
-| `POLL_INTERVAL_SEC` | `30` | Intervallo polling in secondi |
+| `POLL_INTERVAL_SEC` | `30` | Intervallo polling SMB in secondi |
+| `PING_INTERVAL_SEC` | `1` | Intervallo ping ICMP in secondi (`0` = disabilitato) |
 
 ### 2. File `config/machines.yaml` (sorgenti SMB)
 
@@ -181,6 +204,8 @@ machines:
 | `username` / `password` | Credenziali SMB |
 | `domain` | Dominio Windows (opzionale, lasciare `""` su Raspberry) |
 | `nome_macchinario` / `nome_pezzo` | Default se il log contiene solo il timestamp |
+| `rdp_enabled` | Se `true`, la macchina compare nel cruscotto RDP (Log_dashboard) |
+| `pingable` | Se `true`, monitor ICMP ogni `PING_INTERVAL_SEC` → tabella `ping_checks` |
 
 Per aggiungere un macchinario: aggiungi una voce in `machines.yaml`. Non serve riavviare il codice se usi lo stesso file; al prossimo ciclo la legge.
 

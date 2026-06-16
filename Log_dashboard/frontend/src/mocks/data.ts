@@ -111,6 +111,25 @@ function buildLogs(machines: Machine[]): LogEntry[] {
       });
     }
   }
+
+  for (const machine of machines.slice(0, 4)) {
+    for (let k = 0; k < 30; k += 1) {
+      const secondsAgo = k * 5;
+      const reachable = k % 7 !== 0;
+      logs.push({
+        id: `ping-${id++}`,
+        machineId: machine.id,
+        timestamp: new Date(Date.now() - secondsAgo * 1000).toISOString(),
+        action: "PING_CHECK",
+        level: reachable ? "info" : "error",
+        message: reachable
+          ? `Ping OK (${machine.ipAddress})`
+          : `Ping fallito (${machine.ipAddress})`,
+        user: "sistema",
+      });
+    }
+  }
+
   return logs.sort((x, y) => y.timestamp.localeCompare(x.timestamp));
 }
 

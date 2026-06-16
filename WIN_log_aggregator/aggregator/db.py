@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 
 import psycopg2
 
@@ -6,6 +7,22 @@ from aggregator.config import DbSettings
 from aggregator.parser import ParsedPiece
 
 logger = logging.getLogger(__name__)
+
+_PING_CHECKS_DDL = """
+CREATE TABLE IF NOT EXISTS ping_checks (
+    id BIGSERIAL PRIMARY KEY,
+    nome_macchinario TEXT NOT NULL,
+    ip TEXT NOT NULL,
+    reachable BOOLEAN NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE ping_checks
+    ADD COLUMN IF NOT EXISTS reachable BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_ping_checks_macchina_ts
+    ON ping_checks (nome_macchinario, timestamp DESC);
+"""
 
 
 class PieceRepository:
@@ -24,6 +41,7 @@ class PieceRepository:
             connect_timeout=10,
         )
         self._conn.autocommit = True
+        self.ensure_schema()
         logger.info(
             "Connesso a PostgreSQL su %s:%s/%s",
             self._settings.host,
@@ -39,6 +57,39 @@ class PieceRepository:
     def ensure_connected(self) -> None:
         if self._conn is None or self._conn.closed:
             self.connect()
+
+    def ensure_schema(self) -> None:
+        if self._conn is None or self._conn.closed:
+            return
+        with self._conn.cursor() as cursor:
+            cursor.execute(_PING_CHECKS_DDL)
+
+    def insert_ping_check(
+        self,
+        nome_macchinario: str,
+        ip: str,
+        reachable: bool,
+        timestamp: datetime | None = None,
+    ) -> bool:
+        ts = timestamp or datetime.now(timezone.utc)
+        query = """
+            INSERT INTO ping_checks (nome_macchinario, ip, reachable, timestamp)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+        """
+        params = (nome_macchinario, ip, reachable, ts)
+
+        try:
+            self.ensure_connected()
+            with self._conn.cursor() as cursor:
+                cursor.execute(query, params)
+                return cursor.fetchone() is not None
+        except psycopg2.Error:
+            logger.exception("Errore insert ping_checks, tentativo di riconnessione")
+            self.connect()
+            with self._conn.cursor() as cursor:
+                cursor.execute(query, params)
+                return cursor.fetchone() is not None
 
     def insert_piece(self, piece: ParsedPiece, source_id: str) -> bool:
         query = """

@@ -50,7 +50,8 @@ monitoring_Log/
    - `nome_macchinario` — identifica la macchina
    - `nome_pezzo` — identifica il tipo di pezzo prodotto
    - `timestamp` — data/ora UTC del conteggio
-5. In caso di errore di connessione al database, lo script tenta automaticamente la riconnessione.
+5. Opzionalmente, se `PEZZO_SECONDARIO_OGNI_N` > 0, ogni **N** conteggi primari viene eseguita anche un'insert con `NOME_PEZZO_SECONDARIO` (stesso timestamp del conteggio che ha attivato la soglia).
+6. In caso di errore di connessione al database, lo script tenta automaticamente la riconnessione.
 
 ---
 
@@ -285,6 +286,11 @@ Lo script carica le variabili in questo ordine:
 NOME_MACCHINARIO=Linea1_MacchinaA
 NOME_PEZZO=ComponenteXYZ
 
+# Pezzo secondario opzionale: ogni N conteggi primari viene inserito anche NOME_PEZZO_SECONDARIO
+# Lasciare PEZZO_SECONDARIO_OGNI_N=0 (o commentare) per disabilitare
+NOME_PEZZO_SECONDARIO=ComponenteXYZ_secondario
+PEZZO_SECONDARIO_OGNI_N=0
+
 # PostgreSQL sulla rete locale
 DB_HOST=172.20.1.84
 DB_PORT=5432
@@ -302,12 +308,24 @@ GPIO_IDLE=high
 DEBOUNCE_MS=200
 ```
 
+**Esempio pezzo secondario abilitato** (insert aggiuntiva ogni 10 pezzi primari):
+
+```bash
+NOME_PEZZO=ComponenteXYZ
+NOME_PEZZO_SECONDARIO=ComponenteXYZ_secondario
+PEZZO_SECONDARIO_OGNI_N=10
+```
+
+Al 10°, 20°, 30°… impulso GPIO: una riga con `ComponenteXYZ` e una con `ComponenteXYZ_secondario`.
+
 ### Tabella variabili
 
 | Variabile | Obbligatoria | Default | Descrizione |
 |-----------|:------------:|---------|-------------|
 | `NOME_MACCHINARIO` | sì | — | Nome univoco della macchina (es. `Linea1_MacchinaA`) |
 | `NOME_PEZZO` | sì | — | Tipo di pezzo prodotto (es. `ComponenteXYZ`) |
+| `NOME_PEZZO_SECONDARIO` | no | — | Nome pezzo per insert aggiuntiva periodica (richiesto se `PEZZO_SECONDARIO_OGNI_N` > 0) |
+| `PEZZO_SECONDARIO_OGNI_N` | no | `0` | Ogni N conteggi primari inserisce anche `NOME_PEZZO_SECONDARIO`; `0` = disabilitato |
 | `DB_HOST` | no | `localhost` | IP o hostname del server PostgreSQL |
 | `DB_PORT` | no | `5432` | Porta PostgreSQL |
 | `DB_NAME` | sì | — | Nome del database |
@@ -326,7 +344,7 @@ sudo nano /etc/piece-counter.env
 sudo chmod 600 /etc/piece-counter.env
 ```
 
-> Su ogni Raspberry cambiano **solo** `NOME_MACCHINARIO`, `NOME_PEZZO` e, se necessario, le credenziali DB. Tutto il resto resta identico.
+> Su ogni Raspberry cambiano **solo** `NOME_MACCHINARIO`, `NOME_PEZZO` e, se usata la feature, `NOME_PEZZO_SECONDARIO` / `PEZZO_SECONDARIO_OGNI_N`. Le credenziali DB e GPIO restano in genere identiche.
 
 ---
 
@@ -425,6 +443,9 @@ Impostare almeno:
 ```bash
 NOME_MACCHINARIO=NomeUnivocoMacchina
 NOME_PEZZO=NomePezzo
+# opzionale:
+# NOME_PEZZO_SECONDARIO=NomePezzoSecondario
+# PEZZO_SECONDARIO_OGNI_N=10
 DB_HOST=192.168.x.x
 DB_NAME=raspberry_counter
 DB_USER=counter
@@ -526,6 +547,12 @@ Pezzo rilevato su GPIO 10 alle 2026-05-21T...
 Insert completata: macchinario=Linea1_MacchinaA pezzo=ComponenteXYZ
 ```
 
+Con pezzo secondario attivo (`PEZZO_SECONDARIO_OGNI_N=10`), al decimo impulso compare anche:
+
+```
+Insert pezzo secondario: macchinario=Linea1_MacchinaA pezzo=ComponenteXYZ_secondario (ogni 10 pezzi, conteggio=10)
+```
+
 ### Verifica su database
 
 ```sql
@@ -584,6 +611,7 @@ journalctl -u piece-counter.service -n 50
 
 Cause comuni:
 - Variabile d'ambiente obbligatoria mancante in `/etc/piece-counter.env`
+- `PEZZO_SECONDARIO_OGNI_N` > 0 senza `NOME_PEZZO_SECONDARIO` impostato
 - PostgreSQL non raggiungibile (verificare `DB_HOST` e firewall)
 - Permessi GPIO: l'utente del servizio deve poter accedere ai GPIO
 

@@ -27,7 +27,7 @@ export interface Machine {
 export interface AggregatorMachine {
   id: string;
   smbHost: string;
-  connected: boolean;
+  rdpEnabled: boolean;
   username?: string | null;
   password?: string | null;
   domain?: string | null;

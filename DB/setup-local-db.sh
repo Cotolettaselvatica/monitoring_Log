@@ -75,6 +75,9 @@ psql_admin "$DB_NAME" -f "${ROOT}/init/01-conteggi_pezzi.sql"
 log "Applico schema dashboard ..."
 psql_admin "$DB_NAME" -f "${ROOT}/init/02-dashboard.sql"
 
+log "Applico schema ping_checks ..."
+psql_admin "$DB_NAME" -f "${ROOT}/init/04-ping_checks.sql"
+
 psql_admin "$DB_NAME" <<EOSQL
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${DB_USER};
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${DB_USER};
@@ -88,6 +91,7 @@ if [[ "$RESET" -eq 1 ]]; then
   log "Reset dati di test ..."
   psql_admin "$DB_NAME" <<'EOSQL'
 TRUNCATE conteggi_pezzi RESTART IDENTITY;
+TRUNCATE ping_checks RESTART IDENTITY;
 TRUNCATE dashboard_notes, dashboard_alerts, dashboard_maintenance,
          dashboard_report_schedules, dashboard_report_templates,
          dashboard_audit RESTART IDENTITY CASCADE;
@@ -103,6 +107,8 @@ psql_admin "$DB_NAME" -c \
   "SELECT COUNT(*) AS conteggi FROM conteggi_pezzi;"
 psql_admin "$DB_NAME" -c \
   "SELECT COUNT(*) AS macchinari FROM dashboard_macchinari;"
+psql_admin "$DB_NAME" -c \
+  "SELECT COUNT(*) AS ping_checks FROM ping_checks;"
 psql_admin "$DB_NAME" -c \
   "SELECT id, nome_macchinario, nome_pezzo, timestamp FROM conteggi_pezzi ORDER BY timestamp DESC LIMIT 5;"
 

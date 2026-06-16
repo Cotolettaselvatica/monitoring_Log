@@ -3,7 +3,11 @@ import type { LogEntry, LogRow, Machine } from "@/types";
 /** Arricchisce i log con dati macchinario per griglie e export. */
 export function enrichLogRows(logs: LogEntry[], machines: Machine[]): LogRow[] {
   const byId = new Map(machines.map((m) => [m.id, m]));
-  return logs.map((log) => toLogRow(log, byId.get(log.machineId)));
+  const byCode = new Map(machines.map((m) => [m.code, m]));
+  return logs.map((log) => {
+    const machine = byId.get(log.machineId) ?? byCode.get(log.machineId);
+    return toLogRow(log, machine);
+  });
 }
 
 export function enrichLogsForMachine(logs: LogEntry[], machine: Machine): LogRow[] {
