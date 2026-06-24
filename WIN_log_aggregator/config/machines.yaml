@@ -106,7 +106,6 @@ machines:
     domain: "CATIS"
     nome_macchinario: "Concentratore Black&White"
     nome_pezzo: concentratore
-    # Solo RDP (porta 43234)
 
   - id: TORNOS_T1_Delta_1204
     rdp_enabled: false
