@@ -95,6 +95,19 @@ machines:
     nome_macchinario: DVK_121120-886
     nome_pezzo: filettatura_rubinetto_acqua_in_ottone
 
+  - id: Concentratore_Black_White
+    rdp_enabled: true
+    pingable: false
+    smb_host: 213.233.54.76:43234
+    smb_share: logs
+    log_path: pezzi.log
+    username: blackwhite
+    password: "YUIUrew54$8R4"
+    domain: "CATIS"
+    nome_macchinario: "Concentratore Black&White"
+    nome_pezzo: concentratore
+    # Solo RDP (porta 43234)
+
   - id: TORNOS_T1_Delta_1204
     rdp_enabled: false
     smb_host: 10.0.0.???
