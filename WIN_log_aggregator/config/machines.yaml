@@ -48,6 +48,7 @@ machines:
     #Aprire iframe del produttore
 
   - id: Lasit_Mikromark_G3_NP115874
+    pingable: true
     rdp_enabled: false
     smb_host: 10.0.0.237
     smb_share: logs
@@ -60,6 +61,7 @@ machines:
     #No pass di admin, no RDP per ora, cavo crimpato male
 
   - id: Lasit_Rotomark_NP114459
+    pingable: true
     rdp_enabled: false
     smb_host: 10.0.0.236
     smb_share: logs
@@ -98,7 +100,7 @@ machines:
   - id: Concentratore_Black_White
     rdp_enabled: true
     pingable: true
-    smb_host: 213.233.54.76:43234
+    smb_host: 172.20.1.14
     smb_share: logs
     log_path: pezzi.log
     username: blackwhite
