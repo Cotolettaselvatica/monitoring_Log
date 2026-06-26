@@ -97,7 +97,7 @@ machines:
 
   - id: Concentratore_Black_White
     rdp_enabled: true
-    pingable: false
+    pingable: true
     smb_host: 213.233.54.76:43234
     smb_share: logs
     log_path: pezzi.log
